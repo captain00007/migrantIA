@@ -1,0 +1,177 @@
+openapi: 3.1.0
+info:
+  title: MigrantIA Chat & Knowledge API
+  description: REST API para o chat de orientação e consulta aos Quatro Pilares do MigrantIA.
+  version: 1.0.0
+paths:
+  /api/v1/chat/messages/:
+    post:
+      summary: Envia uma pergunta ao assistente de IA
+      description: Processa a dúvida do migrante em qualquer idioma, executa a busca nos 4 pilares (pgvector + whitelist externa) e retorna a resposta fundamentada com citações.
+      parameters:
+        - in: header
+          name: X-Session-ID
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Identificador da sessão anônima
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+              properties:
+                message:
+                  type: string
+                  example: "Kouman mwen ka renouvle rezidans mwen an Brezil?"
+                ui_language:
+                  type: string
+                  enum: [ht, fr, en, es, pt]
+                  default: pt
+                  example: "ht"
+      responses:
+        '200':
+          description: Resposta gerada com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    format: uuid
+                  message:
+                    type: string
+                    description: Conteúdo da resposta gerada no idioma do usuário
+                  language_detected:
+                    type: string
+                    example: "ht"
+                  golden_rule_triggered:
+                    type: boolean
+                    example: false
+                  sources:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        title:
+                          type: string
+                          example: "Portaria Interministerial MJSP/MRE nº 37/2023"
+                        url:
+                          type: string
+                          example: "https://www.gov.br/mj/pt-br/assuntos/migracoes"
+                        pillar:
+                          type: string
+                          example: "IMMIGRATION"
+                  suggested_partners:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                          example: "Defensoria Pública da União - DPU"
+                        phone:
+                          type: string
+                          example: "(61) 3318-0000"
+                        website:
+                          type: string
+                          example: "https://www.dpu.def.br"
+    get:
+      summary: Obtém o histórico de mensagens da sessão
+      parameters:
+        - in: header
+          name: X-Session-ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Histórico de mensagens da sessão
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      format: uuid
+                    role:
+                      type: string
+                      enum: [user, assistant]
+                    content:
+                      type: string
+                    created_at:
+                      type: string
+                      format: date-time
+
+  /api/v1/sources/partners/:
+    get:
+      summary: Consulta organizações de acolhimento e suporte jurídico
+      parameters:
+        - in: query
+          name: pillar
+          schema:
+            type: string
+            enum: [IMMIGRATION, EDUCATION, NATIONALITY, COMMUNITY]
+        - in: query
+          name: language
+          schema:
+            type: string
+            example: "ht"
+        - in: query
+          name: state
+          schema:
+            type: string
+            example: "SP"
+      responses:
+        '200':
+          description: Lista de parceiros e órgãos verificados
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    partner_type:
+                      type: string
+                    phone:
+                      type: string
+                    email:
+                      type: string
+                    website:
+                      type: string
+                    languages_supported:
+                      type: array
+                      items:
+                        type: string
+
+  /api/v1/i18n/translations/:
+    get:
+      summary: Obtém o catálogo de textos da interface no idioma selecionado
+      parameters:
+        - in: query
+          name: lang
+          required: true
+          schema:
+            type: string
+            enum: [ht, fr, en, es, pt]
+      responses:
+        '200':
+          description: Dicionário de tradução da interface
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string

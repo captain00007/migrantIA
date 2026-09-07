@@ -145,7 +145,7 @@ As consultas externas da IA são rigidamente filtradas através dos seguintes do
 
 1. **Clonar o repositório**:
    ```bash
-   git clone https://github.com/seu-usuario/migrantIA.git
+   git clone https://github.com/captain00007/migrantIA.git
    cd migrantIA
    ```
 
