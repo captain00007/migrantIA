@@ -2,14 +2,11 @@ import pytest
 from langchain_core.documents import Document
 from ia.ingestion.splitter import (
     BaseDocumentSplitter,
-    LegalDocumentSplitter,
     DocumentSplitter,
-    get_legal_text_splitter,
-    split_document_text
 )
 
 
-def test_legal_document_splitter_split_text():
+def test_document_splitter_split_text():
     sample_legal_text = """
 # Lei de Migração - Lei nº 13.445/2017
 
@@ -24,7 +21,7 @@ I - para pesquisa, ensino ou extensão acadêmica;
 II - para tratamento de saúde;
 III - para acolhida humanitária.
 """
-    splitter = LegalDocumentSplitter(chunk_size=200, chunk_overlap=30)
+    splitter = DocumentSplitter(chunk_size=200, chunk_overlap=30)
     chunks = splitter.split_text(sample_legal_text, metadata={"document_id": "lei-13445"})
 
     assert len(chunks) > 0
@@ -36,7 +33,7 @@ III - para acolhida humanitária.
         assert chunk['metadata']['total_chunks'] == len(chunks)
 
 
-def test_legal_document_splitter_split_documents():
+def test_document_splitter_split_documents():
     docs = [
         Document(
             page_content="Art. 1º Acolhida humanitária aos cidadãos haitianos no Brasil.\n\nArt. 2º Regularização documental.",
@@ -54,18 +51,27 @@ def test_legal_document_splitter_split_documents():
         assert doc.metadata['total_chunks'] == len(split_docs)
 
 
+def test_document_splitter_class_methods():
+    # Teste de split_document_text direto via classmethod
+    raw_text = "Art. 1º Teste direto via classmethod da classe DocumentSplitter."
+    res = DocumentSplitter.split_document_text(raw_text, metadata={"origem": "class_method"})
+    assert len(res) == 1
+    assert res[0]['metadata']['origem'] == "class_method"
+
+    # Teste de split_docs direto via classmethod
+    doc_in = [Document(page_content="Texto de teste", metadata={"id": 1})]
+    res_docs = DocumentSplitter.split_docs(doc_in)
+    assert len(res_docs) == 1
+    assert res_docs[0].metadata['id'] == 1
+
+    # Teste de get_text_splitter factory da classe
+    raw_splitter = DocumentSplitter.get_text_splitter(chunk_size=500, chunk_overlap=50)
+    assert raw_splitter._chunk_size == 500
+    assert raw_splitter._chunk_overlap == 50
+
+
 def test_splitter_empty_input():
-    splitter = LegalDocumentSplitter()
+    splitter = DocumentSplitter()
     assert splitter.split_text("") == []
     assert splitter.split_text("   ") == []
     assert splitter.split_documents([]) == []
-
-
-def test_legacy_functions_compatibility():
-    raw_text = "Texto de teste para validação de compatibilidade com indexador."
-    result = split_document_text(raw_text, metadata={"title": "Teste"})
-    assert len(result) == 1
-    assert result[0]['metadata']['title'] == "Teste"
-
-    raw_splitter = get_legal_text_splitter()
-    assert raw_splitter._chunk_size == 1000

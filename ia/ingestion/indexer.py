@@ -11,7 +11,7 @@ from apps.sources.models import (
 )
 from apps.knowledge.models import KnowledgeDocument, DocumentChunk
 from ia.embeddings.service import get_embedding_service
-from ia.ingestion.splitter import LegalDocumentSplitter, BaseDocumentSplitter
+from ia.ingestion.splitter import DocumentSplitter, BaseDocumentSplitter
 from ia.ingestion.corpus import (
     INITIAL_WHITELIST_DOMAINS,
     INITIAL_COMMUNITY_PARTNERS,
@@ -25,7 +25,7 @@ class KnowledgeIndexer:
     """
     def __init__(self, splitter: Optional[BaseDocumentSplitter] = None):
         self.embedding_service = get_embedding_service()
-        self.splitter = splitter or LegalDocumentSplitter()
+        self.splitter = splitter or DocumentSplitter()
 
     def sync_whitelist_domains(self) -> Dict[str, WhitelistDomain]:
         """

@@ -70,6 +70,10 @@ class EmbeddingService(BaseEmbeddingService):
         if provider_model := getattr(settings, provider_key, None):
             return provider_model
 
+        if provider == "google":
+            if gemini_model := getattr(settings, "GEMINI_EMBEDDING_MODEL", None):
+                return gemini_model
+
         raise ValueError(
             f"Nenhum modelo de embedding configurado para o provedor '{provider}'. "
             f"Defina 'AI_EMBEDDING_MODEL' ou '{provider_key}' no seu arquivo .env / settings."

@@ -1,4 +1,4 @@
-﻿"""
+"""
 Testes unitários para o serviço de Embeddings do MigrantIA.
 Validando a arquitetura 100% orientada ao .env / django.conf.settings.
 """
@@ -22,6 +22,7 @@ def test_normalize_provider_name_aliases():
     assert normalize_provider_name("local") == "ollama"
     assert normalize_provider_name("gpt") == "openai"
     assert normalize_provider_name("gemini") == "google"
+    assert normalize_provider_name("google") == "google"
     assert normalize_provider_name("google-genai") == "google"
     assert normalize_provider_name(None) is None
 
@@ -40,8 +41,8 @@ def test_ai_embedding_provider_switch_from_settings(monkeypatch):
 
     # Se AI_EMBEDDING_PROVIDER=gemini, normaliza para google
     monkeypatch.setattr(settings, "AI_EMBEDDING_PROVIDER", "gemini")
-    monkeypatch.setattr(settings, "GOOGLE_API_KEY", "ai-test-key")
-    monkeypatch.setattr(settings, "GOOGLE_EMBEDDING_MODEL", "models/text-embedding-004")
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "ai-test-key")
+    monkeypatch.setattr(settings, "GEMINI_EMBEDDING_MODEL", "models/text-embedding-004")
     mock_google_mod = MagicMock()
     with patch.dict(sys.modules, {"langchain_google_genai": mock_google_mod}):
         service = EmbeddingService()
@@ -138,8 +139,8 @@ def test_ollama_provider_factory(monkeypatch):
 
 def test_google_provider_factory(monkeypatch):
     monkeypatch.setattr(settings, "AI_EMBEDDING_PROVIDER", "gemini")
-    monkeypatch.setattr(settings, "GOOGLE_API_KEY", "fake-gemini-key")
-    monkeypatch.setattr(settings, "GOOGLE_EMBEDDING_MODEL", "models/text-embedding-004")
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "fake-gemini-key")
+    monkeypatch.setattr(settings, "GEMINI_EMBEDDING_MODEL", "models/text-embedding-004")
     monkeypatch.setattr(settings, "AI_EMBEDDING_MODEL", None)
 
     mock_google_cls = MagicMock()
@@ -154,5 +155,5 @@ def test_google_provider_factory(monkeypatch):
         assert service.provider == mock_instance
         mock_google_cls.assert_called_once_with(
             model="models/text-embedding-004",
-            google_api_key="fake-gemini-key"
+            api_key="fake-gemini-key"
         )
