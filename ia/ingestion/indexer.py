@@ -1,10 +1,14 @@
 import os
-import django
 from typing import Dict, Any, List, Optional
 from django.db import transaction
 
 # Setup models
-from apps.sources.models import WhitelistDomain, OfficialSource, CommunityPartner, PillarChoices
+from apps.sources.models import (
+    WhitelistDomain,
+    OfficialSource,
+    CommunityPartner,
+    PillarChoices
+)
 from apps.knowledge.models import KnowledgeDocument, DocumentChunk
 from ia.embeddings.service import get_embedding_service
 from ia.ingestion.splitter import LegalDocumentSplitter, BaseDocumentSplitter

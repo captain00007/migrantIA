@@ -1,4 +1,4 @@
-"""
+﻿"""
 Django settings for migrantIA project.
 """
 import os
@@ -12,10 +12,10 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Quick-start development settings - unsuitable for production
-SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-dev-key-migrantia')
-DEBUG = os.environ.get('DEBUG', 'True') == 'True'
+SECRET_KEY = os.environ.get('SECRET_KEY')
+DEBUG = os.environ.get('DEBUG')
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',') if os.environ.get('ALLOWED_HOSTS') else ['*']
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',')
 
 # Application definition
 INSTALLED_APPS = [
@@ -103,3 +103,32 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [BASE_DIR / 'static'] if (BASE_DIR / 'static').exists() else []
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# =============================================================================
+# MigrantIA - Configurações de Inteligência Artificial (LLM & Embeddings)
+# =============================================================================
+
+# Provedor e Modelo Ativos para LLM (Geração de Texto / Chat / Agente)
+AI_LLM_PROVIDER = os.environ.get('AI_LLM_PROVIDER')
+AI_LLM_MODEL = os.environ.get('AI_LLM_MODEL')
+
+# Provedor e Modelo Ativos para Embeddings (Vetorização e Busca Semântica)
+AI_EMBEDDING_PROVIDER = os.environ.get('AI_EMBEDDING_PROVIDER')
+AI_EMBEDDING_MODEL = os.environ.get('AI_EMBEDDING_MODEL')
+
+AI_EMBEDDING_DIMENSIONS = os.environ.get('AI_EMBEDDING_DIMENSIONS')
+
+# Configurações Específicas dos Provedores
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
+OPENAI_LLM_MODEL = os.environ.get('OPENAI_LLM_MODEL')
+OPENAI_EMBEDDING_MODEL = os.environ.get('OPENAI_EMBEDDING_MODEL')
+
+OLLAMA_BASE_URL = os.environ.get('OLLAMA_BASE_URL')
+OLLAMA_LLM_MODEL = os.environ.get('OLLAMA_LLM_MODEL')
+OLLAMA_EMBEDDING_MODEL = os.environ.get('OLLAMA_EMBEDDING_MODEL')
+
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
+GEMINI_LLM_MODEL = os.environ.get('GEMINI_LLM_MODEL')
+GEMINI_EMBEDDING_MODEL = os.environ.get('GEMINI_EMBEDDING_MODEL')
+
+TAVILY_API_KEY = os.environ.get('TAVILY_API_KEY')
