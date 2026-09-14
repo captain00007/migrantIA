@@ -1,0 +1,143 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div id="app">
+  <!-- Top App Header -->
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-icon">🇧🇷</div>
+      <div class="brand-info">
+        <h1 id="txt-app-title">MigrantIA</h1>
+        <p id="txt-app-subtitle">Assistente Oficial de Apoio ao Migrante</p>
+      </div>
+    </div>
+    
+    <div class="header-actions">
+      <!-- 5-Language Selector -->
+      <div class="lang-select-wrapper">
+        <select id="lang-selector" class="lang-select" aria-label="Selecione o Idioma">
+          <option value="pt" selected>🇧🇷 Português</option>
+          <option value="ht">🇭🇹 Kreyòl</option>
+          <option value="fr">🇫🇷 Français</option>
+          <option value="es">🇪🇸 Español</option>
+          <option value="en">🇺🇸 English</option>
+        </select>
+        <span class="lang-select-arrow">▼</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- 4 Pillars Navigation Chips -->
+  <nav class="pillars-bar" aria-label="Pilares de Conhecimento">
+    <button class="pillar-chip active" data-pillar="" id="chip-all">Todos os Temas</button>
+    <button class="pillar-chip" data-pillar="IMMIGRATION" id="chip-imm">Imigração & Refúgio</button>
+    <button class="pillar-chip" data-pillar="EDUCATION" id="chip-edu">Educação & Diplomas</button>
+    <button class="pillar-chip" data-pillar="NATIONALITY" id="chip-nat">Nacionalidade</button>
+    <button class="pillar-chip" data-pillar="COMMUNITY" id="chip-com">Apoio Comunitário</button>
+  </nav>
+
+  <!-- Chat Messages Container -->
+  <main class="chat-container" id="chat-messages" role="log" aria-live="polite">
+    <!-- Welcome Card -->
+    <div class="welcome-card" id="welcome-card">
+      <h2 id="txt-welcome-title">Como posso ajudar você hoje?</h2>
+      <p id="txt-welcome-subtitle">
+        Tire dúvidas sobre documentação, CPF, visto, trabalho, estudo e direitos no Brasil. Informações 100% auditadas em fontes oficiais.
+      </p>
+      
+      <!-- Quick Prompts -->
+      <div class="quick-prompts">
+        <button class="quick-prompt-btn" data-query="Como solicitar o CPF no Brasil?" id="qp-1">
+          <span>📄</span> <span class="qp-text">Como solicitar o CPF no Brasil?</span>
+        </button>
+        <button class="quick-prompt-btn" data-query="Como renovar o RNM ou Protocolo de Refúgio?" id="qp-2">
+          <span>🔄</span> <span class="qp-text">Como renovar o RNM / Protocolo?</span>
+        </button>
+        <button class="quick-prompt-btn" data-query="Como revalidar diploma universitário no Brasil?" id="qp-3">
+          <span>🎓</span> <span class="qp-text">Como revalidar diploma universitário?</span>
+        </button>
+        <button class="quick-prompt-btn" data-query="Onde encontrar atendimento gratuito da Defensoria Pública (DPU)?" id="qp-4">
+          <span>⚖️</span> <span class="qp-text">Onde encontrar a Defensoria (DPU)?</span>
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <!-- Typing Indicator (Hidden by default) -->
+  <div class="typing-indicator" id="typing-indicator" style="display: none; margin: 0 16px 8px 16px;">
+    <div class="dots">
+      <span class="dot"></span>
+      <span class="dot"></span>
+      <span class="dot"></span>
+    </div>
+    <span id="txt-thinking">Consultando portais governamentais e leis oficiais...</span>
+  </div>
+
+  <!-- Bottom Message Input Bar -->
+  <footer class="input-bar-container">
+    <form class="input-bar" id="chat-form" onsubmit="return false;">
+      <!-- Speech Recognition Button -->
+      <button type="button" class="mic-btn" id="mic-btn" aria-label="Falar por voz" title="Ditar por voz">
+        🎙️
+      </button>
+
+      <!-- Textarea Message Input -->
+      <textarea 
+        id="message-input" 
+        class="chat-input" 
+        rows="1" 
+        placeholder="Digite sua dúvida ou clique no microfone..."
+        aria-label="Digite sua mensagem"
+        required
+      ></textarea>
+
+      <!-- Send Button -->
+      <button type="submit" class="send-btn" id="send-btn" aria-label="Enviar Mensagem">
+        ➤
+      </button>
+    </form>
+  </footer>
+</div>
+
+<!-- Feedback Modal -->
+<div class="modal-overlay" id="feedback-modal" role="dialog" aria-modal="true" aria-labelledby="feedback-title">
+  <div class="modal-content">
+    <h3 id="feedback-title">Como podemos melhorar esta resposta?</h3>
+    
+    <div class="feedback-reasons">
+      <label class="reason-option">
+        <input type="radio" name="feedback-reason" value="INACCURATE" checked>
+        <span id="lbl-reason-inaccurate">Informação incorreta ou imprecisa</span>
+      </label>
+      <label class="reason-option">
+        <input type="radio" name="feedback-reason" value="UNHELPFUL">
+        <span id="lbl-reason-unhelpful">Não respondeu à minha dúvida</span>
+      </label>
+      <label class="reason-option">
+        <input type="radio" name="feedback-reason" value="OUTDATED">
+        <span id="lbl-reason-outdated">Informação parece desatualizada</span>
+      </label>
+      <label class="reason-option">
+        <input type="radio" name="feedback-reason" value="LANGUAGE_ERROR">
+        <span id="lbl-reason-language">Problema de tradução ou idioma</span>
+      </label>
+      <label class="reason-option">
+        <input type="radio" name="feedback-reason" value="OTHER">
+        <span id="lbl-reason-other">Outro motivo</span>
+      </label>
+    </div>
+
+    <textarea 
+      id="feedback-comment" 
+      class="feedback-comment" 
+      placeholder="Escreva mais detalhes (opcional)..."
+    ></textarea>
+
+    <div class="modal-buttons">
+      <button type="button" class="btn-secondary" id="btn-close-modal">Fechar</button>
+      <button type="button" class="btn-primary" id="btn-submit-feedback">Enviar Avaliação</button>
+    </div>
+  </div>
+</div>
+{% endblock %}

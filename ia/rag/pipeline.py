@@ -15,6 +15,8 @@ from ia.retrieval.retriever import get_hybrid_retriever
 from ia.retrieval.search import WhitelistSearchTool, get_search_tool
 from ia.prompts.multilingual import (
     get_golden_rule_fallback,
+    get_greeting_message,
+    is_greeting_message,
     detect_language_heuristic,
     DEFAULT_LANGUAGE,
 )
@@ -170,6 +172,16 @@ class RAGPipeline:
             )
 
         detected_lang = ui_language or detect_language_heuristic(question)
+
+        # 0. Verificação de Saudação / Cumprimento Inicial (Greeting)
+        if is_greeting_message(question):
+            return RAGResponse(
+                content=get_greeting_message(detected_lang),
+                sources=[],
+                language_detected=detected_lang,
+                golden_rule_triggered=False,
+                metadata={"is_greeting": True}
+            )
 
         # PASSO 1: Busca Híbrida Local
         local_docs = self.step_1_local_retrieval(question, pillar_filter=pillar_filter)

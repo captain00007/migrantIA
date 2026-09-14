@@ -1,38 +1,37 @@
-import logging
-from typing import Optional, Dict, Any, List, Callable
-
+"""
+Serviço central de geração de Embeddings para o MigrantIA.
+Padrão 100% orientado às configurações do .env / django.conf.settings.
+"""
+from typing import Any, Dict, List, Optional
 from django.conf import settings
 from langchain_core.embeddings import Embeddings
-from ia.embeddings.base import BaseEmbeddingService
 
-logger = logging.getLogger(__name__)
+# Mapeamento canônico de provedores
+PROVIDER_ALIASES = {
+    "openai": "openai",
+    "gpt": "openai",
+    "chatgpt": "openai",
+    "google": "google",
+    "gemini": "google",
+    "google-genai": "google",
+    "ollama": "ollama",
+    "llama": "ollama",
+    "llama3": "ollama",
+    "local": "ollama",
+}
 
 
-def normalize_provider_name(name: Optional[str]) -> Optional[str]:
-    """
-    Normaliza aliases de provedores para os nomes canônicos suportados.
-    """
-    if not name:
+def normalize_provider_name(provider_name: Optional[str]) -> Optional[str]:
+    """Normaliza o nome do provedor para um identificador canônico."""
+    if not provider_name:
         return None
-    cleaned = str(name).lower().strip().replace("_", "-")
-    alias_map = {
-        "llama": "ollama",
-        "llama3": "ollama",
-        "ollama": "ollama",
-        "local": "ollama",
-        "gpt": "openai",
-        "openai": "openai",
-        "gemini": "google",
-        "google": "google",
-        "google-genai": "google",
-    }
-    return alias_map.get(cleaned, cleaned)
+    normalized = provider_name.strip().lower()
+    return PROVIDER_ALIASES.get(normalized, normalized)
 
 
-class EmbeddingService(BaseEmbeddingService):
+class EmbeddingService(Embeddings):
     """
-    Serviço de Embeddings do MigrantIA.
-    100% configurado a partir do django.conf.settings / .env (OpenAI, Google Gemini, Ollama).
+    Fachada central de embeddings que encapsula os provedores suportados.
     """
 
     def __init__(self, **kwargs: Any) -> None:
@@ -63,12 +62,14 @@ class EmbeddingService(BaseEmbeddingService):
         return canonical
 
     def _resolve_model(self, provider: str) -> str:
-        if generic_model := getattr(settings, "AI_EMBEDDING_MODEL", None):
-            return generic_model
+        # Prioridade 1: Modelo genérico AI_EMBEDDING_MODEL
+        if general_model := getattr(settings, "AI_EMBEDDING_MODEL", None):
+            return general_model
 
+        # Prioridade 2: Variáveis específicas de provedor
         provider_key = f"{provider.upper()}_EMBEDDING_MODEL"
-        if provider_model := getattr(settings, provider_key, None):
-            return provider_model
+        if specific_model := getattr(settings, provider_key, None):
+            return specific_model
 
         if provider == "google":
             if gemini_model := getattr(settings, "GEMINI_EMBEDDING_MODEL", None):
@@ -92,6 +93,10 @@ class EmbeddingService(BaseEmbeddingService):
         """Retorna a instância concreta do provedor de embeddings."""
         return self._provider
 
+    # -------------------------------------------------------------------------
+    # Implementação da Interface LangChain Embeddings
+    # -------------------------------------------------------------------------
+
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """Gera vetores para uma lista de textos delegando para o provedor encapsulado."""
         return self.provider.embed_documents(texts)
@@ -105,9 +110,7 @@ class EmbeddingService(BaseEmbeddingService):
     # -------------------------------------------------------------------------
 
     def _build_provider_instance(self) -> Embeddings:
-
-        """Instancia o provedor configurado no .env."""
-        factories: Dict[str, Callable[..., Embeddings]] = {
+        factories = {
             "openai": self._create_openai,
             "google": self._create_google,
             "ollama": self._create_ollama,
@@ -125,8 +128,8 @@ class EmbeddingService(BaseEmbeddingService):
             "model": self.model_name,
             **self.kwargs
         }
-        if self.dimensions:
-            factory_kwargs["dimensions"] = self.dimensions
+        if "dimensions" in self.kwargs:
+            factory_kwargs["dimensions"] = self.kwargs["dimensions"]
 
         return factory(**factory_kwargs)
 

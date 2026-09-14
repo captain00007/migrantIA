@@ -3,6 +3,7 @@ Views e Endpoints REST do Chat do MigrantIA.
 """
 import logging
 from django.shortcuts import get_object_or_404
+from django.views.generic import TemplateView
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -20,6 +21,13 @@ from apps.chat.serializers import (
 from apps.chat.services import get_chat_service
 
 logger = logging.getLogger(__name__)
+
+
+class ChatHomeView(TemplateView):
+    """
+    GET / -> Renderiza a interface PWA do MigrantIA.
+    """
+    template_name = "index.html"
 
 
 class StandardMessagesPagination(PageNumberPagination):

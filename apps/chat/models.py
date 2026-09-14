@@ -1,7 +1,7 @@
 import uuid
 from django.db import models
 from apps.sources.models import PillarChoices
-from ia.prompts.multilingual import SUPPORTED_UI_LANGUAGES, DEFAULT_LANGUAGE
+from ia.prompts.multilingual import DEFAULT_LANGUAGE
 
 
 class UILanguageChoices(models.TextChoices):

@@ -28,6 +28,8 @@ services:
       - .:/app
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       - DEBUG=True
       - SECRET_KEY=django-insecure-dev-key-migrantia
