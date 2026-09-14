@@ -1,5 +1,4 @@
 from django.db import models
-from pgvector.django import VectorField
 from apps.sources.models import OfficialSource, PillarChoices
 
 
@@ -14,7 +13,9 @@ class DocumentTypeChoices(models.TextChoices):
 
 class KnowledgeDocument(models.Model):
     """
-    Documento oficial ou cartilha completa indexada no sistema.
+    Catálogo e metadados de documentos oficiais indexados no MigrantIA.
+    Os fragmentos textuais (chunks) e vetores de embeddings sÃo gerenciados
+    diretamente pelo PGVector no PostgreSQL (vectorstore).
     """
     title = models.CharField(max_length=500)
     source = models.ForeignKey(
@@ -46,30 +47,3 @@ class KnowledgeDocument(models.Model):
 
     def __str__(self):
         return f"[{self.get_pillar_display()}] {self.title}"
-
-
-class DocumentChunk(models.Model):
-    """
-    Fragmento textual (chunk) com embedding vetorial armazenado no pgvector.
-    """
-    document = models.ForeignKey(
-        KnowledgeDocument,
-        on_delete=models.CASCADE,
-        related_name='chunks'
-    )
-    content = models.TextField()
-    embedding = VectorField(dimensions=1536, null=True, blank=True)
-    chunk_index = models.PositiveIntegerField(default=0)
-    metadata = models.JSONField(
-        default=dict,
-        help_text="Metadados contextuais (título do documento, artigo, pilar, URL)"
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        verbose_name = 'Fragmento Vetorial (Chunk)'
-        verbose_name_plural = 'Fragmentos Vetoriais (Chunks)'
-        ordering = ['document', 'chunk_index']
-
-    def __str__(self):
-        return f"Chunk #{self.chunk_index} de '{self.document.title[:40]}...'"

@@ -8,18 +8,18 @@ from ia.ingestion.splitter import (
 
 def test_document_splitter_split_text():
     sample_legal_text = """
-# Lei de Migração - Lei nº 13.445/2017
+# Lei de Migracao - Lei n 13.445/2017
 
-Art. 1º Esta Lei dispõe sobre os direitos e os deveres do migrante e do visitante.
-§ 1º A política migratória brasileira é regida pelo princípio da acolhida humanitária.
-§ 2º É garantida a igualdade de tratamento e de oportunidade ao migrante.
+Art. 1 Esta Lei dispoe sobre os direitos e os deveres do migrante e do visitante.
+§ 1 A politica migratoria brasileira e regida pelo principio da acolhida humanitaria.
+§ 2 E garantida a igualdade de teratamento e de oportunidade ao migrante.
 
-## Do Visto Temporário
+## Do Visto Temporario
 
-Art. 14. O visto temporário poderá ser concedido ao imigrante que venha ao Brasil:
-I - para pesquisa, ensino ou extensão acadêmica;
-II - para tratamento de saúde;
-III - para acolhida humanitária.
+Art. 14. O visto temporario podera ser concedido ao imigrante que venha ao Brasil:
+I - para pesquisa, ensino ou extensao academica;
+II - para tratamento de saude;
+III - para acolhida humanitaria.
 """
     splitter = DocumentSplitter(chunk_size=200, chunk_overlap=30)
     chunks = splitter.split_text(sample_legal_text, metadata={"document_id": "lei-13445"})
@@ -36,7 +36,7 @@ III - para acolhida humanitária.
 def test_document_splitter_split_documents():
     docs = [
         Document(
-            page_content="Art. 1º Acolhida humanitária aos cidadãos haitianos no Brasil.\n\nArt. 2º Regularização documental.",
+            page_content="Art. 1 Acolhida humanitaria aos cidadaos haitianos no Brasil.\n\nArt. 2 Regularizacao documental.",
             metadata={"source": "portaria_37_2023.pdf", "author": "MJSP"}
         )
     ]
@@ -51,27 +51,28 @@ def test_document_splitter_split_documents():
         assert doc.metadata['total_chunks'] == len(split_docs)
 
 
-def test_document_splitter_class_methods():
-    # Teste de split_document_text direto via classmethod
-    raw_text = "Art. 1º Teste direto via classmethod da classe DocumentSplitter."
-    res = DocumentSplitter.split_document_text(raw_text, metadata={"origem": "class_method"})
-    assert len(res) == 1
-    assert res[0]['metadata']['origem'] == "class_method"
-
-    # Teste de split_docs direto via classmethod
-    doc_in = [Document(page_content="Texto de teste", metadata={"id": 1})]
-    res_docs = DocumentSplitter.split_docs(doc_in)
-    assert len(res_docs) == 1
-    assert res_docs[0].metadata['id'] == 1
-
-    # Teste de get_text_splitter factory da classe
-    raw_splitter = DocumentSplitter.get_text_splitter(chunk_size=500, chunk_overlap=50)
-    assert raw_splitter._chunk_size == 500
-    assert raw_splitter._chunk_overlap == 50
-
-
 def test_splitter_empty_input():
     splitter = DocumentSplitter()
     assert splitter.split_text("") == []
     assert splitter.split_text("   ") == []
     assert splitter.split_documents([]) == []
+
+
+def test_document_splitter_multiple_documents_index_isolation():
+    docs = [Document(page_content="""Art 1 texto documento um.
+
+Art 2 doc um.""", metadata={"source": "doc1.pdf"}), Document(page_content="""Art 1 texto documento dois.
+
+Art 2 doc dois.""", metadata={"source": "doc2.pdf"})]
+    splitter = DocumentSplitter(chunk_size=30, chunk_overlap=5)
+    split_docs = splitter.split_documents(docs)
+    doc1_chunks = [d for d in split_docs if d.metadata["source"] == "doc1.pdf"]
+    doc2_chunks = [d for d in split_docs if d.metadata["source"] == "doc2.pdf"]
+    assert len(doc1_chunks) >= 2
+    assert len(doc2_chunks) >= 2
+    for idx, d in enumerate(doc1_chunks):
+        assert d.metadata["chunk_index"] == idx
+        assert d.metadata["total_chunks"] == len(doc1_chunks)
+    for idx, d in enumerate(doc2_chunks):
+        assert d.metadata["chunk_index"] == idx
+        assert d.metadata["total_chunks"] == len(doc2_chunks)

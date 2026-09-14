@@ -1,166 +1,104 @@
-import os
+"""
+Orquestrador de indexação no PostgreSQL com PGVector para os 4 Pilares do MigrantIA.
+Salva metadados em KnowledgeDocument (Django) e delega o armazenamento, embeddings
+e busca vetorial de chunks diretamente ao PGVector (vectorstore).
+"""
+import logging
 from typing import Dict, Any, List, Optional
 from django.db import transaction
+from langchain_core.documents import Document
 
-# Setup models
-from apps.sources.models import (
-    WhitelistDomain,
-    OfficialSource,
-    CommunityPartner,
-    PillarChoices
-)
-from apps.knowledge.models import KnowledgeDocument, DocumentChunk
-from ia.embeddings.service import get_embedding_service
-from ia.ingestion.splitter import DocumentSplitter, BaseDocumentSplitter
-from ia.ingestion.corpus import (
-    INITIAL_WHITELIST_DOMAINS,
-    INITIAL_COMMUNITY_PARTNERS,
-    CURATED_PILLAR_DOCUMENTS
-)
+from apps.sources.models import PillarChoices, OfficialSource
+from apps.knowledge.models import KnowledgeDocument, DocumentTypeChoices
+from ia.ingestion.splitter import BaseDocumentSplitter, DocumentSplitter
+from ia.retrieval.vectorstore import get_vector_store
+
+logger = logging.getLogger(__name__)
 
 
 class KnowledgeIndexer:
     """
-    Orquestrador de indexação no PostgreSQL com pgvector para os 4 Pilares do MigrantIA.
+    Orquestrador de indexação para os 4 Pilares de Conhecimento do MigrantIA.
     """
-    def __init__(self, splitter: Optional[BaseDocumentSplitter] = None):
-        self.embedding_service = get_embedding_service()
+
+    def __init__(
+        self,
+        splitter: Optional[BaseDocumentSplitter] = None,
+        vector_store: Optional[Any] = None,
+    ):
         self.splitter = splitter or DocumentSplitter()
+        self._vector_store = vector_store
 
-    def sync_whitelist_domains(self) -> Dict[str, WhitelistDomain]:
+    @property
+    def vector_store(self) -> Any:
+        """Inicializa ou obtém a instância do PGVector sob demanda."""
+        if self._vector_store is None:
+            self._vector_store = get_vector_store()
+        return self._vector_store
+
+    @vector_store.setter
+    def vector_store(self, val: Any) -> None:
+        self._vector_store = val
+
+    def index_documents(
+        self,
+        documents: List[Document],
+        pillar: str = PillarChoices.IMMIGRATION,
+        source: Optional[OfficialSource] = None,
+        title: Optional[str] = None,
+        url: Optional[str] = None,
+        document_type: str = DocumentTypeChoices.GUIDE,
+        content_hash: str = "",
+    ) -> int:
         """
-        Garante que os domínios oficiais homologados estejam cadastrados no banco.
+        Indexa documentos:
+        1. Cria ou atualiza o registro KnowledgeDocument no Django (apenas metadados do catálogo).
+        2. Divide os documentos em fragmentos textuais (chunks).
+        3. Envia os fragmentos e metadados contextuais diretamente para o PGVector.
         """
-        domains_map = {}
-        for item in INITIAL_WHITELIST_DOMAINS:
-            domain_obj, created = WhitelistDomain.objects.get_or_create(
-                domain=item['domain'],
+        if not documents:
+            return 0
+
+        # 1. Salvar metadados no catálogo Django
+        doc_title = title or (documents[0].metadata.get("title") if documents else "Documento Oficial")
+        doc_url = url or (documents[0].metadata.get("url") if documents else "")
+
+        with transaction.atomic():
+            knowledge_doc, _ = KnowledgeDocument.objects.update_or_create(
+                title=doc_title,
+                pillar=pillar,
                 defaults={
-                    'organization_name': item['organization_name'],
-                    'is_active': True
-                }
-            )
-            domains_map[item['domain']] = domain_obj
-            if created:
-                print(f"[Whitelist] Domínio homologado criado: {domain_obj.domain}")
-        return domains_map
-
-    def sync_community_partners(self):
-        """
-        Popula o diretório de organizações de apoio comunitário e jurídico aos migrantes.
-        """
-        for item in INITIAL_COMMUNITY_PARTNERS:
-            partner, created = CommunityPartner.objects.update_or_create(
-                name=item['name'],
-                defaults=item
-            )
-            if created:
-                print(f"[Parceiro] Cadastrado: {partner.name}")
-
-    @transaction.atomic
-    def index_curated_corpus(self, domains_map: Dict[str, WhitelistDomain]) -> int:
-        """
-        Ingere, divide em chunks, gera embeddings e indexa no pgvector
-        todos os documentos oficiais dos 4 Pilares de Conhecimento.
-        """
-        total_indexed_chunks = 0
-
-        for doc_data in CURATED_PILLAR_DOCUMENTS:
-            domain_str = doc_data.get('domain_str', 'gov.br')
-            domain_obj = domains_map.get(domain_str) or WhitelistDomain.objects.first()
-
-            # Cria ou obtém a Fonte Oficial
-            source_obj, _ = OfficialSource.objects.get_or_create(
-                url=doc_data['url'],
-                defaults={
-                    'domain': domain_obj,
-                    'name': doc_data['title'],
-                    'pillar': doc_data['pillar'],
-                    'description': f"Fonte oficial do pilar {doc_data['pillar']}"
+                    "source": source,
+                    "document_type": document_type,
+                    "url": doc_url,
+                    "content_hash": content_hash,
                 }
             )
 
-            # Cria ou atualiza o Documento de Conhecimento
-            doc_obj, _ = KnowledgeDocument.objects.update_or_create(
-                title=doc_data['title'],
-                defaults={
-                    'source': source_obj,
-                    'pillar': doc_data['pillar'],
-                    'document_type': doc_data['document_type'],
-                    'url': doc_data['url']
-                }
+        # 2. Dividir documentos
+        chunks = self.splitter.split_documents(documents)
+        for chunk in chunks:
+            chunk.metadata.update({
+                "knowledge_document_id": knowledge_doc.id,
+                "pillar": pillar,
+                "title": doc_title,
+                "url": doc_url,
+                "document_type": document_type,
+            })
+
+        # 3. Armazenar no PGVector
+        if chunks:
+            self.vector_store.add_documents(chunks)
+            logger.info(
+                f"Indexados {len(chunks)} fragmentos para o documento '{doc_title}' no pilar '{pillar}'."
             )
 
-            # Limpa chunks anteriores do documento para reindexação limpa
-            doc_obj.chunks.all().delete()
+        return len(chunks)
 
-            # Chunking do documento
-            doc_meta = {
-                'document_id': doc_obj.id,
-                'title': doc_obj.title,
-                'pillar': doc_obj.pillar,
-                'url': doc_obj.url,
-                'document_type': doc_obj.document_type
-            }
-            chunks_data = self.splitter.split_text(doc_data['content'], metadata=doc_meta)
 
-            # Extrai os textos para gerar embeddings em lote
-            texts = [c['content'] for c in chunks_data]
-            embeddings = self.embedding_service.embed_documents(texts)
-
-            # Cria os chunks com vetores no banco
-            chunk_objs = []
-            for c_data, emb in zip(chunks_data, embeddings):
-                chunk_objs.append(
-                    DocumentChunk(
-                        document=doc_obj,
-                        content=c_data['content'],
-                        embedding=emb,
-                        chunk_index=c_data['chunk_index'],
-                        metadata=c_data['metadata']
-                    )
-                )
-
-            DocumentChunk.objects.bulk_create(chunk_objs)
-            total_indexed_chunks += len(chunk_objs)
-            print(f"[Indexado] '{doc_obj.title}' -> {len(chunk_objs)} chunks no pgvector.")
-
-        return total_indexed_chunks
-
-    def verify_vector_search(self, sample_query: str = "Como emitir o CPF para haitianos no Brasil?"):
-        """
-        Executa uma consulta por similaridade de cosseno diretamente no PostgreSQL pgvector
-        para verificar a precisão do índice.
-        """
-        from pgvector.django import CosineDistance
-
-        print(f"\n--- [TESTE DE BUSCA VETORIAL NO PGVECTOR] ---")
-        print(f"Pergunta de teste: '{sample_query}'")
-        
-        query_vector = self.embedding_service.embed_query(sample_query)
-        
-        # Consulta com operador de distância de cosseno (<=>) no pgvector
-        results = (
-            DocumentChunk.objects
-            .annotate(distance=CosineDistance('embedding', query_vector))
-            .order_by('distance')[:3]
-        )
-
-        for rank, chunk in enumerate(results, 1):
-            similarity_score = 1.0 - float(chunk.distance) if chunk.distance is not None else 0.0
-            print(f"\nResultado #{rank} | Similaridade: {similarity_score:.4f} | Documento: {chunk.document.title}")
-            print(f"Trecho: {chunk.content[:200]}...")
-
-        return results
-
-    def run(self):
-        """
-        Execução completa da esteira de indexação.
-        """
-        print("=== INICIANDO INDEXAÇÃO DOS QUATRO PILARES NO PGVECTOR ===")
-        domains_map = self.sync_whitelist_domains()
-        self.sync_community_partners()
-        total_chunks = self.index_curated_corpus(domains_map)
-        print(f"\nSucesso: {total_chunks} fragmentos indexados no banco vetorial.")
-        self.verify_vector_search()
-        print("=== INDEXAÇÃO CONCLUÍDA COM SUCESSO! ===")
+def get_indexer(
+    splitter: Optional[BaseDocumentSplitter] = None,
+    vector_store: Optional[Any] = None,
+) -> KnowledgeIndexer:
+    """Retorna uma instância configurada do indexador de conhecimento."""
+    return KnowledgeIndexer(splitter=splitter, vector_store=vector_store)
