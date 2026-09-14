@@ -94,11 +94,11 @@ class EmbeddingService(BaseEmbeddingService):
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """Gera vetores para uma lista de textos delegando para o provedor encapsulado."""
-        return self._provider.embed_documents(texts)
+        return self.provider.embed_documents(texts)
 
     def embed_query(self, text: str) -> List[float]:
         """Gera o vetor para uma consulta delegando para o provedor encapsulado."""
-        return self._provider.embed_query(text)
+        return self.provider.embed_query(text)
 
     # -------------------------------------------------------------------------
     # Construção do Provedor Fixo Suportado

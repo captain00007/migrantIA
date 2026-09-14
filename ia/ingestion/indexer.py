@@ -75,25 +75,25 @@ class KnowledgeIndexer:
                 }
             )
 
-        # 2. Dividir documentos
-        chunks = self.splitter.split_documents(documents)
-        for chunk in chunks:
-            chunk.metadata.update({
-                "knowledge_document_id": knowledge_doc.id,
-                "pillar": pillar,
-                "title": doc_title,
-                "url": doc_url,
-                "document_type": document_type,
-            })
+            # 2. Dividir documentos
+            chunks = self.splitter.split_documents(documents)
+            for chunk in chunks:
+                chunk.metadata.update({
+                    "knowledge_document_id": knowledge_doc.id,
+                    "pillar": pillar,
+                    "title": doc_title,
+                    "url": doc_url,
+                    "document_type": document_type,
+                })
 
-        # 3. Armazenar no PGVector
-        if chunks:
-            self.vector_store.add_documents(chunks)
-            logger.info(
-                f"Indexados {len(chunks)} fragmentos para o documento '{doc_title}' no pilar '{pillar}'."
-            )
+            # 3. Armazenar no PGVector
+            if chunks:
+                self.vector_store.add_documents(chunks)
+                logger.info(
+                    f"Indexados {len(chunks)} fragmentos para o documento '{doc_title}' no pilar '{pillar}'."
+                )
 
-        return len(chunks)
+            return len(chunks)
 
 
 def get_indexer(

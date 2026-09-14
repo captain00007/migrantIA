@@ -93,8 +93,7 @@ class DocumentSplitter(BaseDocumentSplitter):
         if not text or not text.strip():
             return []
 
-        splitter = self.splitter
-        chunks = splitter.split_text(text)
+        chunks = self.splitter.split_text(text)
         base_meta = metadata or {}
         total = len(chunks)
 
@@ -120,10 +119,9 @@ class DocumentSplitter(BaseDocumentSplitter):
         if not documents:
             return []
 
-        splitter = self.splitter
         result_docs: List[Document] = []
         for doc in documents:
-            chunks = splitter.split_documents([doc])
+            chunks = self.splitter.split_documents([doc])
             total = len(chunks)
             for idx, chunk in enumerate(chunks):
                 chunk.metadata["chunk_index"] = idx
