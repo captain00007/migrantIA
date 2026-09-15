@@ -80,6 +80,15 @@ class ChatMessage(models.Model):
         related_name="messages",
         db_index=True
     )
+    reply_to = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="replies",
+        db_index=True,
+        help_text="Mensagem do usuário à qual esta resposta se refere"
+    )
     sender_type = models.CharField(
         max_length=20,
         choices=SenderTypeChoices.choices,

@@ -27,8 +27,10 @@ def test_chat_service_process_user_message():
     assert "[CPF_REDACTED]" in user_msg.content
     assert "123.456.789-00" not in user_msg.content
 
-    # Verifica resposta do assistente
+    # Verifica resposta do assistente e vínculo reply_to
     assert assistant_msg.content == "Resposta oficial fundamentada com CPF."
+    assert assistant_msg.reply_to == user_msg
+    assert user_msg.replies.first() == assistant_msg
     assert len(assistant_msg.sources_cited) == 1
     assert assistant_msg.sources_cited[0]["url"] == "https://www.gov.br/cpf"
     assert session.messages.count() == 2

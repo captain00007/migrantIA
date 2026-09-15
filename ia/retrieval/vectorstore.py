@@ -6,7 +6,7 @@ import logging
 from typing import Optional, Any, Dict
 from django.conf import settings
 from langchain_core.embeddings import Embeddings
-from langchain_community.vectorstores.pgvector import PGVector
+from langchain_postgres.vectorstores import PGVector
 from ia.embeddings.service import get_embedding_service
 
 logger = logging.getLogger(__name__)
@@ -38,7 +38,7 @@ def get_vector_store(
 ) -> PGVector:
     """
     Inicializa e retorna uma instância do PGVector VectorStore configurada
-    para o banco PostgreSQL do MigrantIA.
+    para o banco PostgreSQL do MigrantIA utilizando langchain-postgres.
     """
     if embedding_service is None:
         emb_svc = get_embedding_service()
@@ -52,8 +52,8 @@ def get_vector_store(
     conn_str = connection_string or normalize_connection_string(raw_db_url)
 
     return PGVector(
-        connection_string=conn_str,
-        embedding_function=embedding_fn,
+        connection=conn_str,
+        embeddings=embedding_fn,
         collection_name=collection_name,
         use_jsonb=True,
         pre_delete_collection=pre_delete_collection,

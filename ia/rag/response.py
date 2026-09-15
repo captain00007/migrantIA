@@ -12,10 +12,12 @@ class RAGSource(BaseModel):
     snippet: str = ""
     source_type: str = "LOCAL"  # LOCAL, WEB, PARTNER
     pillar: Optional[str] = None
+    page: Optional[int] = None
+    pages: List[int] = Field(default_factory=list)
 
 
 class RAGResponse(BaseModel):
-    """Resposta final estruturada do pipeline RAG do MigrantIA."""
+    """Resposta final estruturada do pipeline RMG do MigrantIA."""
     content: str
     sources: List[RAGSource] = Field(default_factory=list)
     language_detected: str = "pt"

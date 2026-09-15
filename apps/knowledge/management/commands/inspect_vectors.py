@@ -38,7 +38,7 @@ class Command(BaseCommand):
 
             query = """
                 SELECT 
-                    uuid,
+                    id,
                     cmetadata,
                     document,
                     vector_dims(embedding) as dims
@@ -65,7 +65,7 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.SQL_KEYWORD(f"    Título: {title}"))
                 if url:
                     self.stdout.write(f"    Fonte Oficial: {url}")
-                self.stdout.write(f"    UUID: {uid}")
+                self.stdout.write(f"    ID: {uid}")
                 self.stdout.write("    Trecho:")
                 # Exibir as primeiras 3 linhas do chunk
                 sample = "\n".join(["      " + line for line in doc.strip().splitlines()[:4]])

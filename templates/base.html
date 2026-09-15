@@ -40,13 +40,13 @@
   <script src="{% static 'js/i18n.js' %}"></script>
   <script src="{% static 'js/api.js' %}"></script>
   <script src="{% static 'js/speech.js' %}"></script>
-  <script src="{% static 'js/app.js' %}"></script>
+  <script src="{% static 'js/app.js' %}?v=2"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("{% static 'sw.js' %}")
+        navigator.serviceWorker.register("{% static 'sw.js' %}?v=2")
           .then((reg) => console.log("[PWA] Service Worker registrado:", reg.scope))
           .catch((err) => console.warn("[PWA] Erro no Service Worker:", err));
       });

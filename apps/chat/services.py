@@ -96,7 +96,7 @@ class ChatService:
         1. Higieniza dados sensíveis (LGPD).
         2. Registra a mensagem do usuário no banco.
         3. Invoca o RAGPipeline com o histórico recente da conversa.
-        4. Registra a resposta fundamentada do assistente com as fontes citadas.
+        4. Registra a resposta fundamentada do assistente com as fontes citadas e o vínculo reply_to.
         """
         clean_text = content.strip()
         if not clean_text:
@@ -130,7 +130,7 @@ class ChatService:
                 pillar_filter=pillar,
             )
 
-            # 6. Salva a resposta do assistente
+            # 6. Salva a resposta do assistente vinculada à pergunta via reply_to
             sources_payload = [
                 source.model_dump() if hasattr(source, "model_dump") else source.dict()
                 for source in rag_response.sources
@@ -138,6 +138,7 @@ class ChatService:
 
             assistant_msg = ChatMessage.objects.create(
                 session=session,
+                reply_to=user_msg,
                 sender_type=SenderTypeChoices.ASSISTANT,
                 content=rag_response.content,
                 sources_cited=sources_payload,

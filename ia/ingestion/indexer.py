@@ -1,19 +1,27 @@
 """
 Orquestrador de indexação no PostgreSQL com PGVector para os 4 Pilares do MigrantIA.
-Salva metadados em KnowledgeDocument (Django) e delega o armazenamento, embeddings
-e busca vetorial de chunks diretamente ao PGVector (vectorstore).
+Executa a limpeza (TextCleaner), o particionamento (DocumentSplitter)
+e a gravação dos embeddings no PostgreSQL/PGVector.
 """
+import hashlib
 import logging
 from typing import Dict, Any, List, Optional
-from django.db import transaction
+from django.db import connection, transaction
 from langchain_core.documents import Document
 
 from apps.sources.models import PillarChoices, OfficialSource
 from apps.knowledge.models import KnowledgeDocument, DocumentTypeChoices
+from ia.ingestion.cleaners import BaseCleaner, TextCleaner
 from ia.ingestion.splitter import BaseDocumentSplitter, DocumentSplitter
 from ia.retrieval.vectorstore import get_vector_store
 
 logger = logging.getLogger(__name__)
+
+
+def compute_content_hash(documents: List[Document]) -> str:
+    """Gera hash SHA-256 a partir do conteúdo textual concatenado dos documentos."""
+    combined_text = "\n\n".join(doc.page_content for doc in documents if doc.page_content)
+    return hashlib.sha256(combined_text.encode("utf-8")).hexdigest()
 
 
 class KnowledgeIndexer:
@@ -24,9 +32,11 @@ class KnowledgeIndexer:
     def __init__(
         self,
         splitter: Optional[BaseDocumentSplitter] = None,
+        cleaner: Optional[BaseCleaner] = None,
         vector_store: Optional[Any] = None,
     ):
         self.splitter = splitter or DocumentSplitter()
+        self.cleaner = cleaner or TextCleaner()
         self._vector_store = vector_store
 
     @property
@@ -40,6 +50,32 @@ class KnowledgeIndexer:
     def vector_store(self, val: Any) -> None:
         self._vector_store = val
 
+    def _delete_document_vectors(self, knowledge_document_id: int) -> None:
+        """
+        Remove do PGVector todos os fragmentos associados a um determinado KnowledgeDocument.
+        """
+        try:
+            with connection.cursor() as cursor:
+                if connection.vendor == "postgresql":
+                    cursor.execute(
+                        "DELETE FROM langchain_pg_embedding WHERE cmetadata->>'knowledge_document_id' = %s",
+                        [str(knowledge_document_id)],
+                    )
+                elif connection.vendor == "sqlite":
+                    cursor.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name='langchain_pg_embedding';"
+                    )
+                    if cursor.fetchone():
+                        cursor.execute(
+                            "DELETE FROM langchain_pg_embedding WHERE json_extract(cmetadata, '$.knowledge_document_id') = ?",
+                            [str(knowledge_document_id)],
+                        )
+            logger.info(f"Fragmentos antigos removidos para o documento ID {knowledge_document_id}.")
+        except Exception as e:
+            logger.warning(
+                f"Erro ao tentar remover fragmentos do PGVector para o documento {knowledge_document_id}: {e}"
+            )
+
     def index_documents(
         self,
         documents: List[Document],
@@ -51,32 +87,71 @@ class KnowledgeIndexer:
         content_hash: str = "",
     ) -> int:
         """
-        Indexa documentos:
-        1. Cria ou atualiza o registro KnowledgeDocument no Django (apenas metadados do catálogo).
-        2. Divide os documentos em fragmentos textuais (chunks).
-        3. Envia os fragmentos e metadados contextuais diretamente para o PGVector.
+        Indexa documentos com controle de idempotência por hash de conteúdo:
+        1. Limpa e normaliza os documentos carregados (TextCleaner).
+        2. Calcula o hash SHA-256 do conteúdo limpo (se não fornecido).
+        3. Verifica se o documento já existe no Django:
+           - Se existir e o hash for idêntico: atualiza metadados e PULA divisão/vetorização (retorna 0).
+           - Se existir e o hash mudou: limpa vetores antigos do PGVector e atualiza com novos vetores.
+           - Se for novo: cria o registro e efetua a vetorização.
         """
         if not documents:
             return 0
 
-        # 1. Salvar metadados no catálogo Django
-        doc_title = title or (documents[0].metadata.get("title") if documents else "Documento Oficial")
-        doc_url = url or (documents[0].metadata.get("url") if documents else "")
+        # Etapa de Limpeza e Normalização (TextCleaner)
+        cleaned_docs = self.cleaner.clean_documents(documents)
+        if not cleaned_docs:
+            return 0
+
+        doc_title = title or (cleaned_docs[0].metadata.get("title") if cleaned_docs else "Documento Oficial")
+        doc_url = (url or (cleaned_docs[0].metadata.get("url") if cleaned_docs else None) or "")
+        effective_hash = content_hash or compute_content_hash(cleaned_docs)
 
         with transaction.atomic():
-            knowledge_doc, _ = KnowledgeDocument.objects.update_or_create(
+            existing_doc = KnowledgeDocument.objects.filter(
                 title=doc_title,
-                pillar=pillar,
-                defaults={
-                    "source": source,
-                    "document_type": document_type,
-                    "url": doc_url,
-                    "content_hash": content_hash,
-                }
-            )
+                pillar=pillar
+            ).first()
 
-            # 2. Dividir documentos
-            chunks = self.splitter.split_documents(documents)
+            if existing_doc:
+                # Caso 1: Conteúdo idêntico (Idempotência / Sem alterações)
+                if existing_doc.content_hash == effective_hash and effective_hash != "":
+                    logger.info(
+                        f"Documento '{doc_title}' no pilar '{pillar}' não foi modificado "
+                        f"(hash {effective_hash[:8]}...). Pulando geração de embeddings."
+                    )
+                    # Atualiza apenas eventuais metadados modificados
+                    existing_doc.source = source
+                    existing_doc.document_type = document_type
+                    existing_doc.url = doc_url
+                    existing_doc.save(update_fields=["source", "document_type", "url", "updated_at"])
+                    return 0
+
+                # Caso 2: Conteúdo modificado
+                logger.info(
+                    f"Documento '{doc_title}' foi alterado. Atualizando metadados e re-indexando vetores."
+                )
+                self._delete_document_vectors(existing_doc.id)
+
+                existing_doc.source = source
+                existing_doc.document_type = document_type
+                existing_doc.url = doc_url
+                existing_doc.content_hash = effective_hash
+                existing_doc.save(update_fields=["source", "document_type", "url", "content_hash", "updated_at"])
+                knowledge_doc = existing_doc
+            else:
+                # Caso 3: Novo documento
+                knowledge_doc = KnowledgeDocument.objects.create(
+                    title=doc_title,
+                    pillar=pillar,
+                    source=source,
+                    document_type=document_type,
+                    url=doc_url,
+                    content_hash=effective_hash,
+                )
+
+            # Dividir documentos e enviar ao PGVector
+            chunks = self.splitter.split_documents(cleaned_docs)
             for chunk in chunks:
                 chunk.metadata.update({
                     "knowledge_document_id": knowledge_doc.id,
@@ -86,7 +161,6 @@ class KnowledgeIndexer:
                     "document_type": document_type,
                 })
 
-            # 3. Armazenar no PGVector
             if chunks:
                 self.vector_store.add_documents(chunks)
                 logger.info(
@@ -98,7 +172,8 @@ class KnowledgeIndexer:
 
 def get_indexer(
     splitter: Optional[BaseDocumentSplitter] = None,
+    cleaner: Optional[BaseCleaner] = None,
     vector_store: Optional[Any] = None,
 ) -> KnowledgeIndexer:
     """Retorna uma instância configurada do indexador de conhecimento."""
-    return KnowledgeIndexer(splitter=splitter, vector_store=vector_store)
+    return KnowledgeIndexer(splitter=splitter, cleaner=cleaner, vector_store=vector_store)

@@ -1,4 +1,4 @@
-const CACHE_NAME = "migrantia-v1";
+const CACHE_NAME = "migrantia-v2";
 const STATIC_ASSETS = [
   "/",
   "/static/css/main.css",
@@ -10,13 +10,6 @@ const STATIC_ASSETS = [
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS).catch((err) => {
-        console.warn("[SW] Falha ao pré-carregar alguns assets:", err);
-      });
-    })
-  );
   self.skipWaiting();
 });
 
@@ -36,22 +29,20 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  // Ignora requisições de API para que o chat sempre busque dados frescos
+  // Em desenvolvimento, busca da rede primeiro para evitar JS desatualizado
   if (event.request.url.includes("/api/")) {
     return;
   }
 
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-      return fetch(event.request).catch(() => {
-        // Fallback offline se necessário
-        if (event.request.mode === "navigate") {
-          return caches.match("/");
+    fetch(event.request)
+      .then((response) => {
+        if (response && response.status === 200) {
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
         }
-      });
-    })
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });

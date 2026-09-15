@@ -37,6 +37,7 @@ class ChatMessageSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "session_id",
+            "reply_to_id",
             "sender_type",
             "content",
             "sources_cited",
@@ -48,6 +49,7 @@ class ChatMessageSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "session_id",
+            "reply_to_id",
             "sender_type",
             "sources_cited",
             "golden_rule_triggered",

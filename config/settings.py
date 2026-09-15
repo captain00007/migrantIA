@@ -132,3 +132,13 @@ GEMINI_LLM_MODEL = os.environ.get('GEMINI_LLM_MODEL')
 GEMINI_EMBEDDING_MODEL = os.environ.get('GEMINI_EMBEDDING_MODEL')
 
 TAVILY_API_KEY = os.environ.get('TAVILY_API_KEY')
+
+# =============================================================================
+# Django REST Framework
+# =============================================================================
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.AllowAny',
+    ],
+}

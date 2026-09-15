@@ -256,7 +256,16 @@ document.addEventListener("DOMContentLoaded", () => {
         item.href = src.url || "#";
         item.target = "_blank";
         item.rel = "noopener noreferrer";
-        item.innerHTML = `<span>🔗 ${escapeHtml(src.title || "Portal Oficial")}</span> <span>↗</span>`;
+
+        let pageBadge = "";
+        if (src.pages && src.pages.length > 0) {
+          pageBadge = src.pages.length === 1 ? ` (Pág. ${src.pages[0]})` : ` (Págs. ${src.pages.join(", ")})`;
+        } else if (src.page) {
+          pageBadge = ` (Pág. ${src.page})`;
+        }
+
+        const titleText = (src.title || "Portal Oficial") + pageBadge;
+        item.innerHTML = `<span>🔗 ${escapeHtml(titleText)}</span> <span>↗</span>`;
         list.appendChild(item);
       });
 

@@ -34,6 +34,7 @@ def test_create_chat_messages_and_feedback():
     
     assistant_msg = ChatMessage.objects.create(
         session=session,
+        reply_to=user_msg,
         sender_type=SenderTypeChoices.ASSISTANT,
         content="O CPF pode ser emitido na Receita Federal.",
         sources_cited=[{"title": "Receita Federal", "url": "https://www.gov.br/receita"}],
@@ -41,6 +42,9 @@ def test_create_chat_messages_and_feedback():
     )
     
     assert session.messages.count() == 2
+    assert assistant_msg.reply_to == user_msg
+    assert user_msg.replies.count() == 1
+    assert user_msg.replies.first() == assistant_msg
     assert assistant_msg.sources_cited[0]["url"] == "https://www.gov.br/receita"
     
     feedback = MessageFeedback.objects.create(
