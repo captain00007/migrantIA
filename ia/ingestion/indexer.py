@@ -1,11 +1,14 @@
 """
 Orquestrador de indexação no PostgreSQL com PGVector para os 4 Pilares do MigrantIA.
-Executa a limpeza (TextCleaner), o particionamento (DocumentSplitter)
+Executa a limpeza (TextCleaner), o particionamento (DocumentSplitter),
+o salvamento unificado do arquivo original e do texto limpo em disco,
 e a gravação dos embeddings no PostgreSQL/PGVector.
 """
+import io
 import hashlib
 import logging
-from typing import Dict, Any, List, Optional
+from pathlib import Path
+from typing import Dict, Any, List, Optional, Union
 from django.db import connection, transaction
 from langchain_core.documents import Document
 
@@ -13,6 +16,7 @@ from apps.sources.models import PillarChoices, OfficialSource
 from apps.knowledge.models import KnowledgeDocument, DocumentTypeChoices
 from ia.ingestion.cleaners import BaseCleaner, TextCleaner
 from ia.ingestion.splitter import BaseDocumentSplitter, DocumentSplitter
+from ia.ingestion.storage import save_document_bundle
 from ia.retrieval.vectorstore import get_vector_store
 
 logger = logging.getLogger(__name__)
@@ -85,13 +89,16 @@ class KnowledgeIndexer:
         url: Optional[str] = None,
         document_type: str = DocumentTypeChoices.GUIDE,
         content_hash: str = "",
+        source_file: Optional[Union[str, Path, bytes, io.BytesIO]] = None,
+        original_filename: Optional[str] = None,
     ) -> int:
         """
-        Indexa documentos com controle de idempotência por hash de conteúdo:
+        Indexa documentos com controle de idempotência por hash de conteúdo e armazenamento de artefatos:
         1. Limpa e normaliza os documentos carregados (TextCleaner).
         2. Calcula o hash SHA-256 do conteúdo limpo (se não fornecido).
-        3. Verifica se o documento já existe no Django:
-           - Se existir e o hash for idêntico: atualiza metadados e PULA divisão/vetorização (retorna 0).
+        3. Salva o arquivo original e o texto limpo no diretório media/documents/<hash>/.
+        4. Verifica se o documento já existe no Django:
+           - Se existir e o hash for idêntico: atualiza metadados e PULA vetorização (retorna 0).
            - Se existir e o hash mudou: limpa vetores antigos do PGVector e atualiza com novos vetores.
            - Se for novo: cria o registro e efetua a vetorização.
         """
@@ -107,6 +114,14 @@ class KnowledgeIndexer:
         doc_url = (url or (cleaned_docs[0].metadata.get("url") if cleaned_docs else None) or "")
         effective_hash = content_hash or compute_content_hash(cleaned_docs)
 
+        # Salva o bundle (original + cleaned.md) no disco
+        save_document_bundle(
+            content_hash=effective_hash,
+            cleaned_docs=cleaned_docs,
+            source_file=source_file,
+            original_filename=original_filename,
+        )
+
         with transaction.atomic():
             existing_doc = KnowledgeDocument.objects.filter(
                 title=doc_title,
@@ -120,7 +135,6 @@ class KnowledgeIndexer:
                         f"Documento '{doc_title}' no pilar '{pillar}' não foi modificado "
                         f"(hash {effective_hash[:8]}...). Pulando geração de embeddings."
                     )
-                    # Atualiza apenas eventuais metadados modificados
                     existing_doc.source = source
                     existing_doc.document_type = document_type
                     existing_doc.url = doc_url

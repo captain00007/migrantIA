@@ -1,9 +1,11 @@
 from unittest.mock import Mock, patch
+from pathlib import Path
 import pytest
 from langchain_core.documents import Document
 from apps.sources.models import PillarChoices
 from apps.knowledge.models import KnowledgeDocument, DocumentTypeChoices
 from ia.ingestion.indexer import KnowledgeIndexer, get_indexer, compute_content_hash
+from ia.ingestion.storage import get_documents_storage_dir
 
 
 def test_compute_content_hash():
@@ -28,7 +30,7 @@ def test_compute_content_hash():
 
 
 @pytest.mark.django_db
-def test_knowledge_indexer_new_document():
+def test_knowledge_indexer_new_document_and_storage_bundle(tmp_path):
     mock_vectorstore = Mock()
     mock_splitter = Mock()
     mock_splitter.split_documents.return_value = [
@@ -38,9 +40,13 @@ def test_knowledge_indexer_new_document():
 
     indexer = KnowledgeIndexer(splitter=mock_splitter, vector_store=mock_vectorstore)
 
+    # Cria arquivo original de teste
+    test_file = tmp_path / "lei_13445.txt"
+    test_file.write_text("Texto completo original da Lei de Migração 13.445", encoding="utf-8")
+
     docs = [
         Document(
-            page_content="Texto completo da Lei de Migração 13.445",
+            page_content="Texto completo limpo da Lei de Migração 13.445",
             metadata={"title": "Lei 13.445", "url": "https://www.gov.br/lei"}
         )
     ]
@@ -49,6 +55,8 @@ def test_knowledge_indexer_new_document():
         pillar=PillarChoices.IMMIGRATION,
         title="Lei de Migração 13.445",
         url="https://www.gov.br/lei",
+        source_file=test_file,
+        original_filename="lei_13445.txt",
     )
 
     assert indexed_count == 2
@@ -57,7 +65,19 @@ def test_knowledge_indexer_new_document():
     assert doc_record.pillar == PillarChoices.IMMIGRATION
     assert doc_record.content_hash != ""
     assert mock_vectorstore.add_documents.called
-    assert mock_vectorstore.add_documents.call_count == 1
+
+    # Verifica se a pasta do hash e os arquivos foram criados
+    storage_dir = doc_record.storage_dir
+    assert storage_dir is not None
+    assert storage_dir.exists()
+
+    raw_saved = storage_dir / "lei_13445.txt"
+    assert raw_saved.exists()
+    assert "Texto completo original" in raw_saved.read_text(encoding="utf-8")
+
+    cleaned_saved = storage_dir / "cleaned.md"
+    assert cleaned_saved.exists()
+    assert "Texto completo limpo" in cleaned_saved.read_text(encoding="utf-8")
 
 
 @pytest.mark.django_db

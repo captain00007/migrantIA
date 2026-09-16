@@ -1,3 +1,4 @@
+from pathlib import Path
 from django.db import models
 from apps.sources.models import OfficialSource, PillarChoices
 
@@ -14,7 +15,7 @@ class DocumentTypeChoices(models.TextChoices):
 class KnowledgeDocument(models.Model):
     """
     Catálogo e metadados de documentos oficiais indexados no MigrantIA.
-    Os fragmentos textuais (chunks) e vetores de embeddings sÃo gerenciados
+    Os fragmentos textuais (chunks) e vetores de embeddings são gerenciados
     diretamente pelo PGVector no PostgreSQL (vectorstore).
     """
     title = models.CharField(max_length=500)
@@ -47,3 +48,22 @@ class KnowledgeDocument(models.Model):
 
     def __str__(self):
         return f"[{self.get_pillar_display()}] {self.title}"
+
+    @property
+    def storage_dir(self):
+        """Retorna o diretório base no disco onde os arquivos desta versão estão armazenados."""
+        if not self.content_hash:
+            return None
+        from ia.ingestion.storage import get_documents_storage_dir
+        path = get_documents_storage_dir() / self.content_hash
+        return path if path.exists() else None
+
+    @property
+    def cleaned_file_path(self):
+        """Retorna o caminho do cleaned.md se existir."""
+        dir_path = self.storage_dir
+        if dir_path:
+            cleaned = dir_path / "cleaned.md"
+            if cleaned.exists():
+                return cleaned
+        return None

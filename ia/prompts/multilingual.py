@@ -26,12 +26,12 @@ GOLDEN_RULE_MESSAGES: Dict[str, str] = {
     ),
     "fr": (
         "Je n'ai pas trouvé cette information dans les sources officielles consultées. "
-        "Je vous recommande de vous adresser directement à l'une des organisations de soutien "
+        "Je vous recommande de vous adresser diretamente à l'une des organisations de soutien "
         "ou à l'autorité compétente (DPU, HCR, Caritas, Missão Paz, CRAI)."
     ),
     "es": (
         "No encontré esta información en las fuentes oficiales consultadas. "
-        "Le recomiendo comunicarse directamente con una de las instituciones de apoyo registradas "
+        "Le recomiendo comunicarse diretamente con una de las instituciones de apoyo registradas "
         "o el organismo competente (DPU, ACNUR, Cáritas, Missão Paz, CRAI)."
     ),
     "en": (
@@ -70,7 +70,7 @@ def detect_language_heuristic(text: str) -> str:
     if not text or not text.strip():
         return DEFAULT_LANGUAGE
 
-    words = set(re.findall(r"\w+", text.lower()))
+    words = set(re.findall(r"\b\w+\b", text.lower()))
 
     kreyol_markers = {"mwen", "nou", "yo", "kijan", "koman", "ki", "nan", "pou", "gen", "fè", "pa", "se", "sa", "bagay", "vle", "bonjou", "bonswa", "pase"}
     if len(words & kreyol_markers) >= 2 or any(w in {"kijan", "koman", "mwen", "bonjou", "bonswa"} for w in words):

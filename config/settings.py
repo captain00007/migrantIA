@@ -1,4 +1,4 @@
-﻿"""
+"""
 Django settings for migrantIA project.
 """
 import os
@@ -101,6 +101,11 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [BASE_DIR / 'static'] if (BASE_DIR / 'static').exists() else []
+
+# Media files (Uploaded documents and cleaned artifacts)
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+DOCUMENTS_STORAGE_DIR = MEDIA_ROOT / 'documents'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

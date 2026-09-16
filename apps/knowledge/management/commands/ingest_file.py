@@ -2,13 +2,13 @@ import os
 from pathlib import Path
 from django.core.management.base import BaseCommand, CommandError
 from apps.sources.models import PillarChoices, OfficialSource, WhitelistDomain
-from apps.knowledge.models import DocumentTypeChoices
+from apps.knowledge.models import DocumentTypeChoices, KnowledgeDocument
 from ia.ingestion.loaders.document import DocumentLoader
 from ia.ingestion.indexer import KnowledgeIndexer
 
 
 class Command(BaseCommand):
-    help = "Faz o upload/ingestão e vetorização de um arquivo (PDF, DOCX, TXT, MD) no PGVector"
+    help = "Faz o upload/ingestão e vetorização de um arquivo (PDF, DOCX, TXT, MD) no PGVector e salva na pasta do hash"
 
     def add_arguments(self, parser):
         parser.add_argument("file_path", type=str, help="Caminho do arquivo a ser ingerido")
@@ -79,12 +79,18 @@ class Command(BaseCommand):
             title=title,
             url=url,
             document_type=doc_type,
+            source_file=file_path,
+            original_filename=file_path.name,
         )
+
+        doc_record = KnowledgeDocument.objects.filter(title=title, pillar=pillar).first()
+        storage_info = f"   - Pasta dos arquivos: {doc_record.storage_dir}\n" if doc_record and doc_record.storage_dir else ""
 
         if chunks_count == 0:
             self.stdout.write(
                 self.style.WARNING(
                     f"\n⚡ Documento '{title}' no pilar [{pillar}] já estava atualizado (hash de conteúdo inalterado).\n"
+                    f"{storage_info}"
                     f"   - Metadados verificados/atualizados.\n"
                     f"   - Vetorização ignorada (0 custo de embeddings / 0 duplicatas)."
                 )
@@ -93,6 +99,7 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.SUCCESS(
                     f"\n🎉 Sucesso! Documento '{title}' indexado no pilar [{pillar}].\n"
+                    f"{storage_info}"
                     f"   - Total de fragmentos vetorizados: {chunks_count}\n"
                     f"   - Banco vetorial (pgvector): Atualizado com sucesso!"
                 )
