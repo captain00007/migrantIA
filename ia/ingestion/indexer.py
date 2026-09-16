@@ -83,7 +83,7 @@ class KnowledgeIndexer:
     def index_documents(
         self,
         documents: List[Document],
-        pillar: str = PillarChoices.IMMIGRATION,
+        pillar: str,
         source: Optional[OfficialSource] = None,
         title: Optional[str] = None,
         url: Optional[str] = None,
@@ -124,22 +124,20 @@ class KnowledgeIndexer:
 
         with transaction.atomic():
             existing_doc = KnowledgeDocument.objects.filter(
-                title=doc_title,
-                pillar=pillar
+                content_hash=effective_hash
             ).first()
 
+            
             if existing_doc:
-                # Caso 1: Conteúdo idêntico (Idempotência / Sem alterações)
-                if existing_doc.content_hash == effective_hash and effective_hash != "":
-                    logger.info(
-                        f"Documento '{doc_title}' no pilar '{pillar}' não foi modificado "
-                        f"(hash {effective_hash[:8]}...). Pulando geração de embeddings."
-                    )
-                    existing_doc.source = source
-                    existing_doc.document_type = document_type
-                    existing_doc.url = doc_url
-                    existing_doc.save(update_fields=["source", "document_type", "url", "updated_at"])
-                    return 0
+                logger.info(
+                    f"Documento '{doc_title}' no pilar '{pillar}' não foi modificado "
+                    f"(hash {effective_hash[:8]}...). Pulando geração de embeddings."
+                )
+                existing_doc.source = source
+                existing_doc.document_type = document_type
+                existing_doc.url = doc_url
+                existing_doc.save(update_fields=["source", "document_type", "url", "updated_at"])
+                return 0
 
                 # Caso 2: Conteúdo modificado
                 logger.info(

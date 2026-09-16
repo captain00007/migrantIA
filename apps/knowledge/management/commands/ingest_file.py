@@ -58,11 +58,6 @@ class Command(BaseCommand):
             # Carregar documentos usando o DocumentLoader
             result = loader.load(source=str(file_path), custom_title=title, url=url)
             raw_docs = result.get("documents", [])
-            if not raw_docs:
-                from langchain_core.documents import Document
-                content = result.get("content", "")
-                if content:
-                    raw_docs = [Document(page_content=content, metadata={"title": title, "url": url})]
             self.stdout.write(self.style.NOTICE(f"Documentos raw loader: {len(raw_docs)} página(s)/documento(s) extraído(s)"))
         except Exception as e:
             raise CommandError(f"Erro ao processar arquivo com DocumentLoader: {e}")

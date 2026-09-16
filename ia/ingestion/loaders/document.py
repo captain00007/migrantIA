@@ -233,7 +233,7 @@ class DocumentLoader(BaseDocumentLoader):
             "url": url,
         }
 
-        if docs:
+        if docs: # A ver
             metadata.update({k: v for k, v in docs[0].metadata.items() if k not in metadata})
 
         if source_type == "pdf":
