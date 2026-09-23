@@ -17,7 +17,7 @@ class RAGSource(BaseModel):
 
 
 class RAGResponse(BaseModel):
-    """Resposta final estruturada do pipeline RMG do MigrantIA."""
+    """Resposta final estruturada do pipeline RAG do MigrantIA."""
     content: str
     sources: List[RAGSource] = Field(default_factory=list)
     language_detected: str = "pt"

@@ -95,7 +95,7 @@ class ChatService:
         Processa uma mensagem do usuário:
         1. Higieniza dados sensíveis (LGPD).
         2. Registra a mensagem do usuário no banco.
-        3. Invoca o RAGPipeline com o histórico recente da conversa.
+        3. Invoca o RAGPipeline com o histórico recente da conversa (fora de transação).
         4. Registra a resposta fundamentada do assistente com as fontes citadas e o vínculo reply_to.
         """
         clean_text = content.strip()
@@ -110,32 +110,32 @@ class ChatService:
         if not effective_lang:
             effective_lang = detect_language_heuristic(clean_text)
 
+        # 3. Salva a mensagem do usuário imediatamente
+        user_msg = ChatMessage.objects.create(
+            session=session,
+            sender_type=SenderTypeChoices.USER,
+            content=sanitized_content,
+        )
+
+        # 4. Obtém histórico recente para a chain
+        chat_history = self.get_session_history(session=session, limit=6)
+
+        # 5. Executa o RAG FORA de qualquer transação de banco de dados
+        pillar = pillar_filter or session.primary_pillar
+        rag_response = self.rag_pipeline.query(
+            question=sanitized_content,
+            ui_language=effective_lang,
+            chat_history=chat_history,
+            pillar_filter=pillar,
+        )
+
+        # 6. Salva a resposta do assistente vinculada à pergunta e atualiza a sessão atomicamente
+        sources_payload = [
+            source.model_dump() if hasattr(source, "model_dump") else source.dict()
+            for source in rag_response.sources
+        ]
+
         with transaction.atomic():
-            # 3. Salva a mensagem do usuário
-            user_msg = ChatMessage.objects.create(
-                session=session,
-                sender_type=SenderTypeChoices.USER,
-                content=sanitized_content,
-            )
-
-            # 4. Obtém histórico para a chain
-            chat_history = self.get_session_history(session=session, limit=6)
-
-            # 5. Executa o RAG
-            pillar = pillar_filter or session.primary_pillar
-            rag_response = self.rag_pipeline.query(
-                question=sanitized_content,
-                ui_language=effective_lang,
-                chat_history=chat_history,
-                pillar_filter=pillar,
-            )
-
-            # 6. Salva a resposta do assistente vinculada à pergunta via reply_to
-            sources_payload = [
-                source.model_dump() if hasattr(source, "model_dump") else source.dict()
-                for source in rag_response.sources
-            ]
-
             assistant_msg = ChatMessage.objects.create(
                 session=session,
                 reply_to=user_msg,

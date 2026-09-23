@@ -124,33 +124,37 @@ class KnowledgeIndexer:
 
         with transaction.atomic():
             existing_doc = KnowledgeDocument.objects.filter(
-                content_hash=effective_hash
+                title=doc_title, pillar=pillar
             ).first()
+            if not existing_doc:
+                existing_doc = KnowledgeDocument.objects.filter(
+                    content_hash=effective_hash
+                ).first()
 
-            
             if existing_doc:
-                logger.info(
-                    f"Documento '{doc_title}' no pilar '{pillar}' não foi modificado "
-                    f"(hash {effective_hash[:8]}...). Pulando geração de embeddings."
-                )
-                existing_doc.source = source
-                existing_doc.document_type = document_type
-                existing_doc.url = doc_url
-                existing_doc.save(update_fields=["source", "document_type", "url", "updated_at"])
-                return 0
+                if existing_doc.content_hash == effective_hash:
+                    logger.info(
+                        f"Documento '{doc_title}' no pilar '{pillar}' não foi modificado "
+                        f"(hash {effective_hash[:8]}...). Pulando geração de embeddings."
+                    )
+                    existing_doc.source = source
+                    existing_doc.document_type = document_type
+                    existing_doc.url = doc_url
+                    existing_doc.save(update_fields=["source", "document_type", "url", "updated_at"])
+                    return 0
+                else:
+                    # Caso 2: Conteúdo modificado
+                    logger.info(
+                        f"Documento '{doc_title}' foi alterado. Atualizando metadados e re-indexando vetores."
+                    )
+                    self._delete_document_vectors(existing_doc.id)
 
-                # Caso 2: Conteúdo modificado
-                logger.info(
-                    f"Documento '{doc_title}' foi alterado. Atualizando metadados e re-indexando vetores."
-                )
-                self._delete_document_vectors(existing_doc.id)
-
-                existing_doc.source = source
-                existing_doc.document_type = document_type
-                existing_doc.url = doc_url
-                existing_doc.content_hash = effective_hash
-                existing_doc.save(update_fields=["source", "document_type", "url", "content_hash", "updated_at"])
-                knowledge_doc = existing_doc
+                    existing_doc.source = source
+                    existing_doc.document_type = document_type
+                    existing_doc.url = doc_url
+                    existing_doc.content_hash = effective_hash
+                    existing_doc.save(update_fields=["source", "document_type", "url", "content_hash", "updated_at"])
+                    knowledge_doc = existing_doc
             else:
                 # Caso 3: Novo documento
                 knowledge_doc = KnowledgeDocument.objects.create(
