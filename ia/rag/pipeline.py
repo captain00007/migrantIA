@@ -21,6 +21,7 @@ from ia.retrieval.vectorstore import get_vector_store
 from ia.retrieval.search import WhitelistSearchTool, get_search_tool
 from ia.retrieval.filters import deduplicate_documents
 from ia.guardrails import InputModerator
+from ia.guardrails.moderator import GuardrailResult
 from ia.guardrails.intent import QueryIntent
 from ia.security import (
     CanaryManager,
@@ -140,31 +141,51 @@ class RAGPipeline:
         web_results: List[Dict[str, Any]]
     ) -> List[RAGSource]:
         """
-        Consolida e dedupilica fontes locais e web, agrupando páginas de documentos idênticos.
+        Consolida e deduplica fontes locais e web, agrupando páginas e links de documentos idênticos.
         """
-        grouped_local: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        grouped_sources: Dict[Tuple[str, str], Dict[str, Any]] = {}
 
+        # 1. Fontes Locais (Base de Conhecimento Auditada)
         for doc in local_docs:
             title = doc.metadata.get("title", "Documento Oficial")
             url = doc.metadata.get("url", "")
             pillar = doc.metadata.get("pillar")
             page_num = doc.metadata.get("page")
+            pages_list = doc.metadata.get("pages", [])
 
             key = (title, url)
-            if key not in grouped_local:
-                grouped_local[key] = {
+            if key not in grouped_sources:
+                grouped_sources[key] = {
                     "title": title,
                     "url": url,
-                    "snippet": doc.page_content[:200],
+                    "snippet": (doc.page_content or "")[:250],
                     "source_type": "LOCAL",
                     "pillar": pillar,
                     "pages": set(),
                 }
             if page_num is not None:
-                grouped_local[key]["pages"].add(page_num)
+                grouped_sources[key]["pages"].add(page_num)
+            for p in pages_list:
+                grouped_sources[key]["pages"].add(p)
+
+        # 2. Fontes Web Homologadas (Whitelist)
+        for res in web_results:
+            title = res.get("title", "Portal Governamental/ONG")
+            url = res.get("url", "")
+            key = (title, url)
+
+            if key not in grouped_sources:
+                grouped_sources[key] = {
+                    "title": title,
+                    "url": url,
+                    "snippet": (res.get("content") or "")[:250],
+                    "source_type": "WEB",
+                    "pillar": None,
+                    "pages": set(),
+                }
 
         sources: List[RAGSource] = []
-        for item in grouped_local.values():
+        for item in grouped_sources.values():
             sorted_pages = sorted(list(item["pages"]))
             first_page = sorted_pages[0] if sorted_pages else None
             sources.append(
@@ -176,16 +197,6 @@ class RAGPipeline:
                     pillar=item["pillar"],
                     page=first_page,
                     pages=sorted_pages,
-                )
-            )
-
-        for res in web_results:
-            sources.append(
-                RAGSource(
-                    title=res.get("title", "Portal Governamental/ONG"),
-                    url=res.get("url", ""),
-                    snippet=res.get("content", "")[:200],
-                    source_type="WEB",
                 )
             )
         return sources
@@ -231,7 +242,6 @@ class RAGPipeline:
             "bonjour", "bonsoir", "merci", "aide", "aider", "pouvez",
             "bonjou", "bonswa", "tanpri", "mèsi", "mesi", "kijan", "koman", "rele", "ede",
             "hola", "buenos", "buenas", "dias", "gracias", "ayuda", "ayudar", "puedo",
-            "dumelang", "thusa", "leina",
             "migrantia", "assistente", "inteligência", "inteligencia", "artificial", "humanizado",
             "especializado", "acolhimento", "orientação", "orientacao", "integração", "integracao",
             "pilares", "atuação", "atuacao", "imigração", "imigracao", "educação", "educacao",
@@ -322,6 +332,7 @@ class RAGPipeline:
         ui_language: Optional[str] = None,
         chat_history: Optional[List[Any]] = None,
         pillar_filter: Optional[str] = None,
+        guard_result: Optional[GuardrailResult] = None,
     ) -> RAGResponse:
         """
         Executa o pipeline RAG completo em abordagem semântica unificada.
@@ -342,7 +353,8 @@ class RAGPipeline:
         detected_lang = detect_language_heuristic(clean_question)
 
         # 1. Moderação e Segurança de Entrada (Normalização Unicode, PII, InjectionGuard, Intent)
-        guard_result = self.moderator.inspect(clean_question, ui_language=effective_ui_lang)
+        if guard_result is None:
+            guard_result = self.moderator.inspect(clean_question, ui_language=effective_ui_lang)
 
         # Bloqueio Imediato de Prompt Injection / Ataque Adversário
         if not guard_result.is_safe:

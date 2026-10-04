@@ -1,6 +1,8 @@
 """
 Camada de Serviços de Chat do MigrantIA.
 Orquestra o ciclo de vida das sessões, higienização LGPD, histórico e pipeline RAG.
+Garante que a Moderação e Segurança de Entrada (Normalização Unicode, PII, InjectionGuard, Intent)
+seja executada desde o início, ANTES mesmo de salvar a questão no banco de dados.
 """
 import logging
 from typing import Dict, Any, List, Optional, Tuple
@@ -14,8 +16,11 @@ from apps.chat.models import (
     SenderTypeChoices,
 )
 from apps.chat.privacy import sanitize_pii
-from ia.rag.pipeline import RAGPipeline, get_rag_pipeline
+from ia.guardrails.moderator import InputModerator, GuardrailResult
+from ia.security import log_security_event
 from ia.prompts.multilingual import DEFAULT_LANGUAGE, detect_language_heuristic
+from ia.prompts.refusals import get_refusal_message, RefusalReason
+from ia.rag.pipeline import RAGPipeline, get_rag_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +28,16 @@ logger = logging.getLogger(__name__)
 class ChatService:
     """
     Serviço central de atendimento e persistência de conversas do MigrantIA.
+    Aplica guardrails de segurança e higienização antes da persistência no banco.
     """
 
-    def __init__(self, rag_pipeline: Optional[RAGPipeline] = None):
+    def __init__(
+        self,
+        rag_pipeline: Optional[RAGPipeline] = None,
+        moderator: Optional[InputModerator] = None,
+    ):
         self._rag_pipeline = rag_pipeline
+        self._moderator = moderator
 
     @property
     def rag_pipeline(self) -> RAGPipeline:
@@ -34,6 +45,16 @@ class ChatService:
         if self._rag_pipeline is None:
             self._rag_pipeline = get_rag_pipeline()
         return self._rag_pipeline
+
+    @property
+    def moderator(self) -> InputModerator:
+        """Obtém ou instancia o moderador de entrada."""
+        if self._moderator is None:
+            if isinstance(self._rag_pipeline, RAGPipeline) and hasattr(self._rag_pipeline, "moderator") and isinstance(self._rag_pipeline.moderator, InputModerator):
+                self._moderator = self._rag_pipeline.moderator
+            else:
+                self._moderator = InputModerator()
+        return self._moderator
 
     def get_or_create_session(
         self,
@@ -67,13 +88,32 @@ class ChatService:
     def get_session_history(
         self,
         session: ChatSession,
-        limit: int = 6
+        limit: int = 10
     ) -> List[Any]:
         """
-        Carrega as mensagens recentes da sessão formatadas para a chain do LangChain.
+        Carrega as mensagens recentes válidas e seguras da sessão formatadas para a chain do LangChain.
+        Descarta automaticamente do histórico qualquer interação que tenha sido bloqueada por segurança
+        (ex: tentativas de Prompt Injection), garantindo que o contexto do LLM permaneça 100% limpo e seguro.
         """
-        messages = session.messages.order_by("-created_at")[:limit]
-        # Inverte para ordem cronológica
+        # Identifica mensagens do assistente bloqueadas por guardrails e as perguntas associadas
+        blocked_pairs = session.messages.filter(
+            sender_type=SenderTypeChoices.ASSISTANT,
+            metadata__blocked_by__isnull=False
+        ).values_list("id", "reply_to_id")
+
+        blocked_message_ids = set()
+        for assist_id, reply_id in blocked_pairs:
+            if assist_id:
+                blocked_message_ids.add(assist_id)
+            if reply_id:
+                blocked_message_ids.add(reply_id)
+
+        # Filtra apenas mensagens seguras e válidas
+        messages_query = session.messages.all()
+        if blocked_message_ids:
+            messages_query = messages_query.exclude(id__in=blocked_message_ids)
+
+        messages = messages_query.order_by("-created_at")[:limit]
         chronological = list(reversed(messages))
 
         history = []
@@ -93,43 +133,85 @@ class ChatService:
     ) -> Tuple[ChatMessage, ChatMessage]:
         """
         Processa uma mensagem do usuário:
-        1. Higieniza dados sensíveis (LGPD).
-        2. Registra a mensagem do usuário no banco.
-        3. Invoca o RAGPipeline com o histórico recente da conversa (fora de transação).
-        4. Registra a resposta fundamentada do assistente com as fontes citadas e o vínculo reply_to.
+        1. Resolução do idioma de atendimento.
+        2. Moderação e Segurança de Entrada ANTES de persistir no banco:
+           - Normalização Unicode (NFKC, Homoglyphs, Zero-Width strip)
+           - PII Masking / Higienização LGPD
+           - InjectionGuard (Prompt Injection, Jailbreak & Encoding Obfuscation)
+           - IntentClassifier (Roteamento semântico)
+        3. Se for detectado ataque/violação de segurança:
+           - Salva registro higienizado e resposta de bloqueio segura imediatamente.
+        4. Se for segura:
+           - Carrega histórico recente das mensagens anteriores.
+           - Salva a mensagem do usuário com o conteúdo sanitizado e normalizado.
+           - Invoca o RAGPipeline com o contexto protegido.
+           - Salva a resposta do assistente vinculada à pergunta com as fontes citadas.
         """
-        clean_text = content.strip()
+        clean_text = (content or "").strip()
         if not clean_text:
             raise ValueError("O conteúdo da mensagem não pode ser vazio.")
 
-        # 1. Higienização LGPD
-        sanitized_content = sanitize_pii(clean_text)
-
-        # 2. Resolução do idioma
+        # 1. Resolução preliminar do idioma
         effective_lang = ui_language_override or session.ui_language
         if not effective_lang:
             effective_lang = detect_language_heuristic(clean_text)
 
-        # 3. Obtém histórico recente das mensagens anteriores para a chain
+        # 2. Moderação e Segurança de Entrada ANTES de salvar a questão no banco de dados
+        guard_result: GuardrailResult = self.moderator.inspect(clean_text, ui_language=effective_lang)
+
+        # 3. Bloqueio Imediato de Prompt Injection / Violação de Segurança
+        if not guard_result.is_safe:
+            log_security_event(
+                event_type="PROMPT_INJECTION_BLOCKED",
+                raw_input=guard_result.sanitized_text,
+                reason=guard_result.reason,
+                step=0,
+            )
+            with transaction.atomic():
+                user_msg = ChatMessage.objects.create(
+                    session=session,
+                    sender_type=SenderTypeChoices.USER,
+                    content=guard_result.sanitized_text,
+                )
+                assistant_msg = ChatMessage.objects.create(
+                    session=session,
+                    reply_to=user_msg,
+                    sender_type=SenderTypeChoices.ASSISTANT,
+                    content=guard_result.refusal_message or get_refusal_message(RefusalReason.SECURITY_VIOLATION, ui_language=effective_lang),
+                    sources_cited=[],
+                    golden_rule_triggered=False,
+                    metadata={
+                        "step": 0,
+                        "blocked_by": "injection_guard",
+                        "reason": guard_result.reason,
+                        "intent": guard_result.intent.value if hasattr(guard_result.intent, "value") else str(guard_result.intent),
+                    },
+                )
+                session.updated_at = assistant_msg.created_at
+                session.save(update_fields=["updated_at"])
+            return user_msg, assistant_msg
+
+        # 4. Mensagem Segura: Carrega histórico anterior antes de persistir a nova pergunta
         chat_history = self.get_session_history(session=session, limit=10)
 
-        # 4. Salva a mensagem do usuário imediatamente
+        # 5. Salva a mensagem do usuário no banco com o conteúdo higienizado e normalizado
         user_msg = ChatMessage.objects.create(
             session=session,
             sender_type=SenderTypeChoices.USER,
-            content=sanitized_content,
+            content=guard_result.sanitized_text,
         )
 
-        # 5. Executa o RAG FORA de qualquer transação de banco de dados
+        # 6. Executa o RAG FORA de qualquer transação de banco de dados
         pillar = pillar_filter or session.primary_pillar
         rag_response = self.rag_pipeline.query(
-            question=sanitized_content,
+            question=guard_result.sanitized_text,
             ui_language=effective_lang,
             chat_history=chat_history,
             pillar_filter=pillar,
+            guard_result=guard_result,
         )
 
-        # 6. Salva a resposta do assistente vinculada à pergunta e atualiza a sessão atomicamente
+        # 7. Salva a resposta do assistente vinculada à pergunta e atualiza a sessão atomicamente
         sources_payload = [
             source.model_dump() if hasattr(source, "model_dump") else source.dict()
             for source in rag_response.sources
@@ -146,7 +228,6 @@ class ChatService:
                 metadata=rag_response.metadata,
             )
 
-            # Atualiza a sessão
             session.updated_at = assistant_msg.created_at
             session.save(update_fields=["updated_at"])
 
@@ -176,6 +257,9 @@ class ChatService:
         return feedback
 
 
-def get_chat_service(rag_pipeline: Optional[RAGPipeline] = None) -> ChatService:
+def get_chat_service(
+    rag_pipeline: Optional[RAGPipeline] = None,
+    moderator: Optional[InputModerator] = None,
+) -> ChatService:
     """Retorna uma instância configurada do serviço de chat."""
-    return ChatService(rag_pipeline=rag_pipeline)
+    return ChatService(rag_pipeline=rag_pipeline, moderator=moderator)
