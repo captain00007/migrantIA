@@ -40,7 +40,7 @@ def test_rag_pipeline_step_1_local_evidence():
 
 
 def test_rag_pipeline_step_2_whitelist_search_fallback():
-    dummy_llm = DummyChatModel(response_text="Conforme o portal oficial, o agendamento é online.")
+    dummy_llm = DummyChatModel(response_text="Conforme o Portal Polícia Federal, o agendamento de atendimento presencial é obrigatório.")
     dummy_retriever = Mock()
     dummy_retriever.invoke.return_value = []  # Local vazio
 
@@ -83,6 +83,16 @@ def test_rag_pipeline_step_3_golden_rule():
     assert "Não encontrei essa informação" in response.content
     assert len(response.sources) == 0
     assert response.metadata["step"] == 3
+
+
+def test_rag_pipeline_empty_query_handling():
+    dummy_llm = DummyChatModel()
+    pipeline = RAGPipeline(llm=dummy_llm)
+    response = pipeline.query("", ui_language="pt")
+
+    assert isinstance(response, RAGResponse)
+    assert response.metadata["step"] == 0
+    assert len(response.sources) == 0
 
 
 def test_rag_pipeline_handles_greetings_and_capabilities_semantically():

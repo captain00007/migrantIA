@@ -15,6 +15,6 @@ def create_rag_chain(
     """
     Cria a cadeia de processamento RAG: Prompt -> LLM -> StrOutputParser.
     """
-    active_llm = llm or get_llm(temperature=0.0)
+    active_llm = llm or get_llm(temperature=0.3)
     prompt = get_rag_prompt_template()
     return prompt | active_llm | StrOutputParser()

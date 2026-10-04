@@ -6,7 +6,7 @@ import logging
 from typing import List, Dict, Any, Optional
 from django.conf import settings
 from apps.sources.models import WhitelistDomain
-from ia.retrieval.filters import is_domain_whitelisted, filter_whitelisted_sources
+from ia.retrieval.filters import is_domain_whitelisted, filter_whitelisted_sources, DEFAULT_MIN_SEARCH_SCORE
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,10 @@ class WhitelistSearchTool:
     """
 
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or getattr(settings, "TAVILY_API_KEY", None)
+        if api_key is not None:
+            self.api_key = api_key
+        else:
+            self.api_key = getattr(settings, "TAVILY_API_KEY", None)
 
     def get_active_whitelist_domains(self) -> List[str]:
         """Obtém a lista atual de domínios homologados ativos no banco."""
@@ -34,9 +37,10 @@ class WhitelistSearchTool:
         query: str,
         max_results: int = 5,
         allowed_domains: Optional[List[str]] = None,
+        min_score: float = DEFAULT_MIN_SEARCH_SCORE,
     ) -> List[Dict[str, Any]]:
         """
-        Executa a busca na web com filtro estrito de domínios homologados.
+        Executa a busca na web com filtro estrito de domínios homologados e proteção anti-spam.
         """
         domains = allowed_domains or self.get_active_whitelist_domains()
         if not domains or not query or not query.strip():
@@ -53,6 +57,7 @@ class WhitelistSearchTool:
                     search_depth="advanced"
                 )
                 raw_results = response.get("results", [])
+                print("raw_results tavily: ",raw_results)
                 formatted = [
                     {
                         "title": r.get("title", ""),
@@ -62,7 +67,12 @@ class WhitelistSearchTool:
                     }
                     for r in raw_results
                 ]
-                return filter_whitelisted_sources(formatted, domains)
+                return filter_whitelisted_sources(
+                    formatted,
+                    allowed_domains=domains,
+                    min_score=min_score,
+                    filter_spam=True
+                )
             except Exception as exc:
                 logger.error(f"Erro na busca Tavily: {exc}")
 

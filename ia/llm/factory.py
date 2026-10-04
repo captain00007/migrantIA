@@ -54,7 +54,7 @@ class LLMFactory:
         cls,
         provider: Optional[str] = None,
         model: Optional[str] = None,
-        temperature: float = 0.0,
+        temperature: float = 0.3,
         **kwargs: Any,
     ) -> BaseChatModel:
         """
@@ -80,7 +80,7 @@ class LLMFactory:
 def get_llm(
     provider: Optional[str] = None,
     model: Optional[str] = None,
-    temperature: float = 0.0,
+    temperature: float = 0.3,
     **kwargs: Any,
 ) -> BaseChatModel:
     """Função utilitária de conveniência para obter o LLM."""

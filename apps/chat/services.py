@@ -110,15 +110,15 @@ class ChatService:
         if not effective_lang:
             effective_lang = detect_language_heuristic(clean_text)
 
-        # 3. Salva a mensagem do usuário imediatamente
+        # 3. Obtém histórico recente das mensagens anteriores para a chain
+        chat_history = self.get_session_history(session=session, limit=10)
+
+        # 4. Salva a mensagem do usuário imediatamente
         user_msg = ChatMessage.objects.create(
             session=session,
             sender_type=SenderTypeChoices.USER,
             content=sanitized_content,
         )
-
-        # 4. Obtém histórico recente para a chain
-        chat_history = self.get_session_history(session=session, limit=6)
 
         # 5. Executa o RAG FORA de qualquer transação de banco de dados
         pillar = pillar_filter or session.primary_pillar

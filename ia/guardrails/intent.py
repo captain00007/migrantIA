@@ -1,6 +1,6 @@
 """
 Módulo de Intenção e Roteamento Semântico do MigrantIA.
-Define as categorias de intenção de consultas sem depender de listas estáticas frágeis.
+Define as categorias conceituais de intenção de consultas.
 """
 from enum import Enum
 
@@ -8,23 +8,23 @@ from enum import Enum
 class QueryIntent(str, Enum):
     """Categorias conceituais de intenção de mensagens."""
     KNOWLEDGE_QUERY = "knowledge_query"      # Dúvidas procedimentais, documentais ou de direitos
-    CHITCHAT_GREETING = "chitchat_greeting"  # Saudações, apresentações, escopo e capacidades
+    CHITCHAT_GREETING = "chitchat_greeting"  # Saudações vazias ou interações não-procedimentais
     OUT_OF_SCOPE = "out_of_scope"            # Temas flagrantemente fora dos 4 Pilares
 
 
 class IntentClassifier:
     """
-    Classificador de intenção com delegação semântica unificada.
-    Elimina a necessidade de manter listas manuais e regexes hardcoded,
-    delegando a compreensão contextual e multilíngue ao motor semântico do RAG.
+    Classificador de intenção de mensagens baseado em delegação semântica universal.
+    Elimina listas hardcoded de idiomas específicos, permitindo que qualquer idioma do mundo
+    (Sesotho, Iorubá, Lingala, Árabe, Kreyòl, etc.) seja interpretado de forma nativa e contextual pelo LLM.
     """
 
-    @staticmethod
-    def classify(text: str) -> QueryIntent:
+    @classmethod
+    def classify(cls, text: str) -> QueryIntent:
         """
-        Por padrão, encaminha a consulta para o pipeline semântico unificado do RAG,
-        garantindo que qualquer pergunta, saudação ou dúvida em qualquer idioma seja
-        interpretada dinamicamente pelo modelo com o System Prompt e o ContextShield.
+        Classifica a intenção de forma universal.
+        Consultas com conteúdo são encaminhadas ao pipeline semântico universal,
+        onde o LLM, o histórico (chat_history) e o ContextShield decidem a resposta.
         """
         if not text or not text.strip():
             return QueryIntent.CHITCHAT_GREETING
