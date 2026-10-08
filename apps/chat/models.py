@@ -1,4 +1,4 @@
-import uuid
+﻿import uuid
 from django.db import models
 from apps.sources.models import PillarChoices
 from ia.prompts.multilingual import DEFAULT_LANGUAGE
@@ -107,10 +107,22 @@ class ChatMessage(models.Model):
         default=False,
         help_text="Indica se a resposta ativou a salvaguarda da Regra de Ouro (sem evidências)"
     )
+    is_security_threat = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Indica se a mensagem é ou responde a uma ameaça de segurança / violação / injeção de prompt"
+    )
+    security_threat_reason = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Motivo categorizado da violação ou suspeita de segurança (ex: prompt_injection_detected, canary_leakage)"
+    )
     metadata = models.JSONField(
         default=dict,
         blank=True,
-        help_text="Métricas de tempo de resposta, step RAG e tokens"
+        help_text="Métricas de tempo de resposta, step RAG, tokens e auditoria"
     )
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Serializadores REST para o app apps/chat.
 """
 from rest_framework import serializers
@@ -42,6 +42,8 @@ class ChatMessageSerializer(serializers.ModelSerializer):
             "content",
             "sources_cited",
             "golden_rule_triggered",
+            "is_security_threat",
+            "security_threat_reason",
             "metadata",
             "feedback",
             "created_at",
@@ -53,6 +55,8 @@ class ChatMessageSerializer(serializers.ModelSerializer):
             "sender_type",
             "sources_cited",
             "golden_rule_triggered",
+            "is_security_threat",
+            "security_threat_reason",
             "metadata",
             "feedback",
             "created_at",

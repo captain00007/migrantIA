@@ -373,6 +373,7 @@ class RAGPipeline:
                     "step": 0,
                     "blocked_by": "injection_guard",
                     "reason": guard_result.reason,
+                    "is_security_threat": True,
                 }
             )
 
@@ -411,6 +412,20 @@ class RAGPipeline:
                 canary_token=canary_token,
                 ui_language=effective_ui_lang,
             )
+
+            if not is_safe:
+                return RAGResponse(
+                    content=response_text,
+                    sources=[],
+                    language_detected=detected_lang,
+                    golden_rule_triggered=False,
+                    metadata={
+                        "step": 10,
+                        "blocked_by": "output_guard",
+                        "reason": reason,
+                        "is_security_threat": True,
+                    }
+                )
 
             # Verifica se o modelo acionou a Regra de Ouro (transparência quando não encontra)
             is_golden_rule = any(

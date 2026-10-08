@@ -57,7 +57,7 @@ class WhitelistSearchTool:
                     search_depth="advanced"
                 )
                 raw_results = response.get("results", [])
-                print("raw_results tavily: ",raw_results)
+
                 formatted = [
                     {
                         "title": r.get("title", ""),

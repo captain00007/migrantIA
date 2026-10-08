@@ -1,4 +1,4 @@
-"""
+﻿"""
 Camada de Serviços de Chat do MigrantIA.
 Orquestra o ciclo de vida das sessões, higienização LGPD, histórico e pipeline RAG.
 Garante que a Moderação e Segurança de Entrada (Normalização Unicode, PII, InjectionGuard, Intent)
@@ -6,7 +6,7 @@ seja executada desde o início, ANTES mesmo de salvar a questão no banco de dad
 """
 import logging
 from typing import Dict, Any, List, Optional, Tuple
-from django.db import transaction
+from django.db import transaction, models
 from langchain_core.messages import HumanMessage, AIMessage
 
 from apps.chat.models import (
@@ -92,26 +92,32 @@ class ChatService:
     ) -> List[Any]:
         """
         Carrega as mensagens recentes válidas e seguras da sessão formatadas para a chain do LangChain.
-        Descarta automaticamente do histórico qualquer interação que tenha sido bloqueada por segurança
-        (ex: tentativas de Prompt Injection), garantindo que o contexto do LLM permaneça 100% limpo e seguro.
+        Descarta automaticamente do histórico qualquer interação que seja ou responda a uma ameaça de segurança
+        (ex: tentativas de Prompt Injection, Jailbreak, Canary Leakage ou mensagens marcadas como ameaça),
+        garantindo que o contexto do LLM permaneça 100% limpo, sem contaminação e seguro.
         """
-        # Identifica mensagens do assistente bloqueadas por guardrails e as perguntas associadas
-        blocked_pairs = session.messages.filter(
-            sender_type=SenderTypeChoices.ASSISTANT,
-            metadata__blocked_by__isnull=False
+        # 1. Identifica IDs de mensagens explicitamente marcadas como ameaça de segurança
+        threat_ids = set(
+            session.messages.filter(is_security_threat=True).values_list("id", flat=True)
+        )
+
+        # 2. Identifica mensagens bloqueadas em legado (metadata__blocked_by) e pares de pergunta-resposta vinculados
+        threat_pairs = session.messages.filter(
+            models.Q(is_security_threat=True) |
+            models.Q(metadata__blocked_by__isnull=False) |
+            models.Q(reply_to__is_security_threat=True)
         ).values_list("id", "reply_to_id")
 
-        blocked_message_ids = set()
-        for assist_id, reply_id in blocked_pairs:
-            if assist_id:
-                blocked_message_ids.add(assist_id)
+        for msg_id, reply_id in threat_pairs:
+            if msg_id:
+                threat_ids.add(msg_id)
             if reply_id:
-                blocked_message_ids.add(reply_id)
+                threat_ids.add(reply_id)
 
-        # Filtra apenas mensagens seguras e válidas
+        # 3. Exclui todas as perguntas e respostas marcadas como ameaça ou suspeitas
         messages_query = session.messages.all()
-        if blocked_message_ids:
-            messages_query = messages_query.exclude(id__in=blocked_message_ids)
+        if threat_ids:
+            messages_query = messages_query.exclude(id__in=threat_ids)
 
         messages = messages_query.order_by("-created_at")[:limit]
         chronological = list(reversed(messages))
@@ -140,9 +146,10 @@ class ChatService:
            - InjectionGuard (Prompt Injection, Jailbreak & Encoding Obfuscation)
            - IntentClassifier (Roteamento semântico)
         3. Se for detectado ataque/violação de segurança:
-           - Salva registro higienizado e resposta de bloqueio segura imediatamente.
+           - Salva registro higienizado e resposta de bloqueio segura imediatamente,
+             marcando AMBAS as mensagens com is_security_threat=True para auditoria futura.
         4. Se for segura:
-           - Carrega histórico recente das mensagens anteriores.
+           - Carrega histórico recente filtrado (sem violações).
            - Salva a mensagem do usuário com o conteúdo sanitizado e normalizado.
            - Invoca o RAGPipeline com o contexto protegido.
            - Salva a resposta do assistente vinculada à pergunta com as fontes citadas.
@@ -172,6 +179,12 @@ class ChatService:
                     session=session,
                     sender_type=SenderTypeChoices.USER,
                     content=guard_result.sanitized_text,
+                    is_security_threat=True,
+                    security_threat_reason=guard_result.reason or "prompt_injection_detected",
+                    metadata={
+                        "is_security_threat": True,
+                        "reason": guard_result.reason,
+                    }
                 )
                 assistant_msg = ChatMessage.objects.create(
                     session=session,
@@ -180,18 +193,21 @@ class ChatService:
                     content=guard_result.refusal_message or get_refusal_message(RefusalReason.SECURITY_VIOLATION, ui_language=effective_lang),
                     sources_cited=[],
                     golden_rule_triggered=False,
+                    is_security_threat=True,
+                    security_threat_reason=guard_result.reason or "prompt_injection_detected",
                     metadata={
                         "step": 0,
                         "blocked_by": "injection_guard",
                         "reason": guard_result.reason,
                         "intent": guard_result.intent.value if hasattr(guard_result.intent, "value") else str(guard_result.intent),
+                        "is_security_threat": True,
                     },
                 )
                 session.updated_at = assistant_msg.created_at
                 session.save(update_fields=["updated_at"])
             return user_msg, assistant_msg
 
-        # 4. Mensagem Segura: Carrega histórico anterior antes de persistir a nova pergunta
+        # 4. Mensagem Segura: Carrega histórico anterior limpo antes de persistir a nova pergunta
         chat_history = self.get_session_history(session=session, limit=10)
 
         # 5. Salva a mensagem do usuário no banco com o conteúdo higienizado e normalizado
@@ -199,6 +215,7 @@ class ChatService:
             session=session,
             sender_type=SenderTypeChoices.USER,
             content=guard_result.sanitized_text,
+            is_security_threat=False,
         )
 
         # 6. Executa o RAG FORA de qualquer transação de banco de dados
@@ -210,6 +227,18 @@ class ChatService:
             pillar_filter=pillar,
             guard_result=guard_result,
         )
+
+        # Se durante a execução do RAG for detectada violação (ex: OutputGuard ou Canary Leak)
+        is_threat = bool(
+            rag_response.metadata.get("is_security_threat")
+            or rag_response.metadata.get("blocked_by")
+        )
+        threat_reason = rag_response.metadata.get("reason") if is_threat else None
+
+        if is_threat:
+            user_msg.is_security_threat = True
+            user_msg.security_threat_reason = threat_reason
+            user_msg.save(update_fields=["is_security_threat", "security_threat_reason"])
 
         # 7. Salva a resposta do assistente vinculada à pergunta e atualiza a sessão atomicamente
         sources_payload = [
@@ -225,6 +254,8 @@ class ChatService:
                 content=rag_response.content,
                 sources_cited=sources_payload,
                 golden_rule_triggered=rag_response.golden_rule_triggered,
+                is_security_threat=is_threat,
+                security_threat_reason=threat_reason,
                 metadata=rag_response.metadata,
             )
 

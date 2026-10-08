@@ -1,11 +1,19 @@
-from django.contrib import admin
+﻿from django.contrib import admin
 from apps.chat.models import ChatSession, ChatMessage, MessageFeedback
 
 
 class ChatMessageInline(admin.TabularInline):
     model = ChatMessage
     extra = 0
-    readonly_fields = ["id", "sender_type", "content", "golden_rule_triggered", "created_at"]
+    readonly_fields = [
+        "id",
+        "sender_type",
+        "content",
+        "is_security_threat",
+        "security_threat_reason",
+        "golden_rule_triggered",
+        "created_at",
+    ]
     can_delete = False
 
 
@@ -19,9 +27,17 @@ class ChatSessionAdmin(admin.ModelAdmin):
 
 @admin.register(ChatMessage)
 class ChatMessageAdmin(admin.ModelAdmin):
-    list_display = ["id", "session", "sender_type", "golden_rule_triggered", "created_at"]
-    list_filter = ["sender_type", "golden_rule_triggered", "created_at"]
-    search_fields = ["content", "session__id"]
+    list_display = [
+        "id",
+        "session",
+        "sender_type",
+        "is_security_threat",
+        "security_threat_reason",
+        "golden_rule_triggered",
+        "created_at",
+    ]
+    list_filter = ["sender_type", "is_security_threat", "security_threat_reason", "golden_rule_triggered", "created_at"]
+    search_fields = ["content", "session__id", "security_threat_reason"]
 
 
 @admin.register(MessageFeedback)

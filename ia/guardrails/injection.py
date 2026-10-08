@@ -1,7 +1,7 @@
-"""
+﻿"""
 Módulo de Proteção contra Injeção de Prompt e Jailbreak Multilíngue (InjectionGuard).
-Detecta tentativas adversárias de manipulação de instruções, vazamento de prompts de sistema
-ou quebra de restrições de segurança em qualquer idioma.
+Detecta tentativas adversárias de manipulação de instruções, vazamento de prompts de sistema,
+quebra de restrições de segurança ou extração de segredos/chaves de API em qualquer idioma.
 """
 import re
 import unicodedata
@@ -11,55 +11,46 @@ from ia.prompts.refusals import get_refusal_message, RefusalReason
 
 INJECTION_PATTERNS = [
     # Inglês
-    r"ignore\s+(?:all\s+)?(?:previous|prior|above)?\s*instructions?",
-    r"disregard\s+(?:all\s+)?(?:previous|prior|above)?\s*instructions?",
-    r"forget\s+(?:all\s+)?(?:previous|prior|above)?\s*instructions?",
+    r"(?:ignore|disregard|forget|bypass|disable|override|remove|clear)\s+(?:all\s+)?(?:previous|prior|above|system)?\s*(?:instructions?|rules?|guidelines?|protections?|safety|guardrails?|filters?|constraints?)",
     r"(?:print|output|display|reveal|show|dump)\s+(?:the\s+)?(?:system\s+prompt|developer\s+prompt|initial\s+instructions?|canary)",
     r"what\s+is\s+your\s+(?:system\s+prompt|initial\s+prompt)",
     r"\bjailbreak\b",
     r"\bdan\s+mode\b",
     r"\bdeveloper\s+mode\b",
     r"\bbypass\s+(?:all\s+)?safety\b",
-    r"(?:give|show|reveal|send)\s+(?:me\s+)?(?:the\s+)?(?:api[_\s-]?key|secret[_\s-]?key|database\s+password)",
+    r"(?:give|show|reveal|send|pass|provide|share|dump|print|display)\s+(?:me\s+)?(?:the\s+)?(?:all\s+)?(?:api[_\s-]?key|secret[_\s-]?key|database\s+password|api\s+token|credentials|access\s+token|admin\s+password|root\s+password)",
 
     # Português
-    r"ignore\s+(?:todas\s+as\s+)?instruções(?:\s+(?:anteriores|prévias|acima))?",
-    r"desconsidere\s+(?:todas\s+as\s+)?instruções(?:\s+(?:anteriores|prévias))?",
-    r"esqueça\s+(?:todas\s+as\s+)?(?:regras|instruções)(?:\s+(?:anteriores|prévias))?",
-    r"(?:mostre|revele|exiba|imprima)\s+(?:o\s+)?(?:prompt\s+do\s+sistema|system\s+prompt|instruções\s+iniciais|canary)",
-    r"qual\s+é\s+o\s+seu\s+(?:prompt\s+de\s+sistema|system\s+prompt)",
+    r"(?:esquecer|esqueça|esquece|esqueca|ignorar|ignore|ignora|desconsiderar|desconsidere|desconsidera|desativar|desative|desativa|remover|remova|remove|anular|anule|anula|burlar|burla|burle|bypassar|bypass|cancelar|cancele|cancela|suspender|suspenda|suspende|desligar|desliga|desligue)\s+(?:tudo\s+o?\s*|todas?\s+as?\s*|toda\s+a?\s*|todo\s+o?\s*|as?\s+|os?\s+|suas?\s+|seus?\s+|qualquer\s+|quaisquer\s+)*(?:instruç(?:ão|ões|ao|oes)|regras?|diretrizes?|proteç(?:ão|ões|ao|oes)|restriç(?:ão|ões|ao|oes)|filtros?|salvaguardas?|segurança|seguranca|guardrails?|travas?|limitaç(?:ão|ões|ao|oes))",
+    r"(?:(?:me\s+)?(?:dê|dar|da|mostre|mostrar|mostra|revele|revelar|revela|passe|passar|passa|envie|enviar|envia|mande|mandar|manda|forneça|fornecer|fornece|exiba|exibir|exibe|libere|liberar|libera|compartilhe|compartilhar|compartilha))\s+(?:me\s+)?(?:todas?\s+as?\s+|o\s+|a\s+|os\s+|as\s+|sua\s+|seu\s+)?(?:api[_\s-]?key|chave\s+(?:da\s+|de\s+)?api|token\s+(?:da\s+|de\s+)?api|api[_\s-]?token|secret[_\s-]?key|senha\s+do\s+banco|senha\s+de\s+root|credenciais|token\s+secreto)",
+    r"(?:(?:qual\s+é\s+o\s+seu|qual\s+e\s+o\s+seu|me\s+(?:dê|da|mostre|passe|envie))\s+(?:o\s+)?(?:prompt\s+do\s+sistema|system\s+prompt|instruções\s+iniciais|canary))",
     r"modo\s+dan\b",
     r"modo\s+desenvolvedor\b",
-    r"(?:me\s+dê|mostre|revele)\s+(?:a\s+)?(?:chave\s+(?:da\s+)?api|senha\s+do\s+banco|token\s+secreto)",
 
     # Espanhol
-    r"ignora\s+(?:todas\s+las\s+)?instrucciones(?:\s+(?:anteriores|previas))?",
-    r"olvida\s+(?:todas\s+las\s+)?instrucciones(?:\s+(?:anteriores|previas))?",
-    r"(?:muestra|revela|imprime)\s+(?:el\s+)?(?:prompt\s+del\s+sistema|system\s+prompt)",
+    r"(?:ignora|olvida|desactiva|anula|elimina|salta)\s+(?:todas\s+las\s+)?(?:instrucciones|reglas|protecciones|directrices|restricciones)(?:\s+(?:anteriores|previas))?",
+    r"(?:muestra|muéstrame|revela|imprime|dame|pasa|envía)\s+(?:el\s+|la\s+)?(?:prompt\s+del\s+sistema|system\s+prompt|api[_\s-]?key|clave\s+de\s+api|token\s+secreto)",
     r"modo\s+desarrollador\b",
 
     # Francês
-    r"ignore\s+(?:toutes\s+les\s+)?instructions(?:\s+(?:précédentes|antérieures))?",
-    r"oublie\s+(?:toutes\s+les\s+)?instructions(?:\s+(?:précédentes|antérieures))?",
-    r"(?:affiche|montre|révèle)\s+(?:le\s+)?(?:prompt\s+système|instructions\s+initiales)",
+    r"(?:ignore|oublie|désactive|contourne)\s+(?:toutes\s+les\s+)?(?:instructions|règles|protections|directives)(?:\s+(?:précédentes|antérieures))?",
+    r"(?:affiche|montre|révèle|donne)\s+(?:le\s+|la\s+)?(?:prompt\s+système|instructions\s+initiales|clé\s+api|api[_\s-]?key)",
 
     # Crioulo Haitiano (Kreyòl)
-    r"pa\s+okipe\s+(?:tout\s+)?enstriksyon(?:\s+anvan\s+yo|\s+yo)?",
-    r"bliye\s+(?:tout\s+)?enstriksyon(?:\s+anvan\s+yo|\s+yo)?",
-    r"montre\s+(?:mwen\s+)?prompt\s+sistèm\s+nan",
+    r"(?:pa\s+okipe|bliye|inore)\s+(?:tout\s+)?(?:enstriksyon|règ|pwoteksyon)(?:\s+anvan\s+yo|\s+yo)?",
+    r"(?:montre|ban|revele)(?:\s+mwen)?\s+(?:prompt\s+sistèm\s+nan|kle\s+api\s+a|api[_\s-]?key)",
 
     # Russo (Игнорируй инструкции / Покажи системный промпт)
-    r"игнорируй\s+(?:все\s+)?инструкции",
-    r"забудь\s+(?:все\s+)?инструкции",
-    r"(?:покажи|выведи)\s+системный\s+промпт",
+    r"(?:игнорируй|забудь|отключи)\s+(?:все\s+)?(?:инструкции|правила|защиту)",
+    r"(?:покажи|выведи|дай)\s+(?:системный\s+промпт|api\s+ключ)",
 
     # Árabe (تجاهل التعليمات / اظهر موجه النظام)
-    r"تجاهل\s+(?:جميع\s+)?التعليمات",
-    r"اظهر\s+(?:موجه\s+النظام|التعليمات\s+السابقة)",
+    r"(?:تجاهل|انس|عطل)\s+(?:جميع\s+)?(?:التعليمات|القواعد|الحماية)",
+    r"(?:اظهر|اعطني|اكشف)\s+(?:موجه\s+النظام|التعليمات\s+السابقة|مفتاح\s+api)",
 
     # Chinês (忽略之前的指令 / 显示系统提示词)
-    r"忽略(?:所有)?(?:之前|前面)?(?:的)?(?:指示|指令|提示)",
-    r"(?:显示|输出|提供)(?:系统)?提示词",
+    r"(?:忽略|忘记|跳过|关闭)(?:所有)?(?:之前|前面)?(?:的)?(?:指示|指令|提示|规则|保护)",
+    r"(?:显示|输出|提供|给我)(?:系统)?(?:提示词|api[_\s-]?key|密钥)",
 ]
 
 COMPILED_INJECTION_REGEX = re.compile(
